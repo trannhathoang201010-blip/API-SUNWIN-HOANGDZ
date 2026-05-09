@@ -8,38 +8,29 @@ class SunwinAdvancedPredictor {
     constructor() {
         this.MAX_HISTORY = 50;
         
-        // ─── ĐỊNH NGHĨA TẤT CẢ CÁC LOẠI CẦU ─────────────────────────────────
         this.CAU_TYPES = {
-            BET: "CẦU BỆT",
             BET_TAI: "BỆT TÀI",
             BET_XIU: "BỆT XỈU",
             DAO_11: "CẦU ĐẢO 1-1",
             DAO_22: "CẦU ĐẢO 2-2",
             DAO_33: "CẦU ĐẢO 3-3",
             DOI_121: "CẦU 1-2-1",
-            DOI_212: "CẦU 2-1-2",
-            DOI_321: "CẦU 3-2-1",
-            DOI_123: "CẦU 1-2-3",
-            DOI_1122: "CẦU 1-1-2-2",
-            DOI_2211: "CẦU 2-2-1-1",
-            NGHIENG_TAI: "CẦU NGHIÊNG TÀI",
-            NGHIENG_XIU: "CẦU NGHIÊNG XỈU",
+            BAC_THANG: "CẦU BẬC THANG",
             SONG: "CẦU SÓNG",
             HOI: "CẦU HỒI",
-            BAC_THANG: "CẦU BẬC THANG",
-            XOAN_OC: "CẦU XOẮN ỐC",
-            GAP_KHUC: "CẦU GẤP KHÚC",
-            TAM_GIAC: "CẦU TAM GIÁC",
+            NGHIENG: "CẦU NGHIÊNG",
         };
     }
 
-    // ─── 1. ALGORITHM: CHUYỂN ĐỔI DỮ LIỆU ────────────────────────────────
-    convertHistory(history) {
-        return history.map(h => ({
-            phien: h.phien,
-            diem: parseInt(h.ket_qua),
-            result: parseInt(h.ket_qua) > 10 ? 'T' : 'X',
-            chiTiet: h.chi_tiet
+    // ─── 1. CHUYỂN ĐỔI DỮ LIỆU ────────────────────────────────────────
+    convertHistory(dataArray) {
+        return dataArray.map(item => ({
+            phien: item.phien,
+            tong: item.tong,
+            result: item.tong >= 11 ? 'T' : 'X', // API trả "Tài"/"Xỉu" nhưng chuẩn là tong >= 11 = Tài
+            ket_qua_text: item.tong >= 11 ? 'Tài' : 'Xỉu',
+            xuc_xac: [item.xuc_xac_1, item.xuc_xac_2, item.xuc_xac_3],
+            thoi_gian: item.thoi_gian
         }));
     }
 
@@ -47,338 +38,163 @@ class SunwinAdvancedPredictor {
         return data.slice(0, length).map(d => d.result).reverse().join('');
     }
 
-    getNumericPattern(data, length = 30) {
-        return data.slice(0, length).map(d => d.result === 'T' ? 1 : 0).reverse();
-    }
-
-    // ─── 2. ALGORITHM: PHÁT HIỆN CẦU BỆT ──────────────────────────────────
-    detectBetCau(str, numericData) {
+    // ─── 2. PHÁT HIỆN CẦU BỆT ──────────────────────────────────────────
+    detectBetCau(str) {
         const results = [];
         
-        // Bệt dài (5+)
+        // Bệt dài 5+
         if (str.startsWith('TTTTT')) {
-            results.push({ type: this.CAU_TYPES.BET_TAI, strength: 'Very Strong', confidence: 95, 
-                          prediction: 'T', description: 'Bệt Tài 5+ phiên' });
+            results.push({ type: this.CAU_TYPES.BET_TAI, confidence: 95, prediction: 'T', 
+                          description: 'Bệt Tài 5+ phiên', strength: 'VERY STRONG' });
         }
         if (str.startsWith('XXXXX')) {
-            results.push({ type: this.CAU_TYPES.BET_XIU, strength: 'Very Strong', confidence: 95, 
-                          prediction: 'X', description: 'Bệt Xỉu 5+ phiên' });
+            results.push({ type: this.CAU_TYPES.BET_XIU, confidence: 95, prediction: 'X', 
+                          description: 'Bệt Xỉu 5+ phiên', strength: 'VERY STRONG' });
         }
         
-        // Bệt trung bình (4)
+        // Bệt 4
         if (str.startsWith('TTTT') && str[4] !== 'T') {
-            results.push({ type: this.CAU_TYPES.BET_TAI, strength: 'Strong', confidence: 85, 
-                          prediction: 'T', description: 'Bệt Tài 4 phiên' });
+            results.push({ type: this.CAU_TYPES.BET_TAI, confidence: 85, prediction: 'T', 
+                          description: 'Bệt Tài 4 phiên', strength: 'STRONG' });
         }
         if (str.startsWith('XXXX') && str[4] !== 'X') {
-            results.push({ type: this.CAU_TYPES.BET_XIU, strength: 'Strong', confidence: 85, 
-                          prediction: 'X', description: 'Bệt Xỉu 4 phiên' });
+            results.push({ type: this.CAU_TYPES.BET_XIU, confidence: 85, prediction: 'X', 
+                          description: 'Bệt Xỉu 4 phiên', strength: 'STRONG' });
         }
         
-        // Bệt ngắn (3)
+        // Bệt 3
         if (str.startsWith('TTT') && str[3] !== 'T') {
-            results.push({ type: this.CAU_TYPES.BET_TAI, strength: 'Medium', confidence: 70, 
-                          prediction: 'T', description: 'Bệt Tài 3 phiên - Có thể bẻ cầu' });
+            results.push({ type: this.CAU_TYPES.BET_TAI, confidence: 70, prediction: 'T', 
+                          description: 'Bệt Tài 3 phiên', strength: 'MEDIUM' });
         }
         if (str.startsWith('XXX') && str[3] !== 'X') {
-            results.push({ type: this.CAU_TYPES.BET_XIU, strength: 'Medium', confidence: 70, 
-                          prediction: 'X', description: 'Bệt Xỉu 3 phiên - Có thể bẻ cầu' });
+            results.push({ type: this.CAU_TYPES.BET_XIU, confidence: 70, prediction: 'X', 
+                          description: 'Bệt Xỉu 3 phiên', strength: 'MEDIUM' });
         }
         
         return results;
     }
 
-    // ─── 3. ALGORITHM: PHÁT HIỆN CẦU ĐẢO ─────────────────────────────────
-    detectDaoCau(str, numericData) {
+    // ─── 3. PHÁT HIỆN CẦU ĐẢO ──────────────────────────────────────────
+    detectDaoCau(str) {
         const results = [];
         
         // Cầu đảo 1-1
         const patterns_11 = ['TXTXTX', 'XTXTXT', 'TXTXT', 'XTXTX'];
         if (patterns_11.some(p => str.startsWith(p))) {
             const nextPred = str[0] === 'T' ? 'X' : 'T';
-            results.push({ type: this.CAU_TYPES.DAO_11, strength: 'Strong', confidence: 85, 
-                          prediction: nextPred, description: 'Đảo 1-1 ổn định' });
+            results.push({ type: this.CAU_TYPES.DAO_11, confidence: 85, prediction: nextPred, 
+                          description: 'Đảo 1-1 ổn định', strength: 'STRONG' });
         }
         
         // Cầu đảo 2-2
-        const patterns_22 = ['TTXXTT', 'XXTTXX', 'TTXXT', 'XXTTX'];
-        if (patterns_22.some(p => str.startsWith(p))) {
-            const lastTwo = str.substring(0, 2);
-            const nextPred = lastTwo === 'TT' ? 'T' : lastTwo === 'XX' ? 'X' : (str[0] === 'T' ? 'T' : 'X');
-            results.push({ type: this.CAU_TYPES.DAO_22, strength: 'Strong', confidence: 80, 
-                          prediction: nextPred, description: 'Đảo 2-2' });
+        if (str.startsWith('TTXXTT') || str.startsWith('XXTTXX')) {
+            results.push({ type: this.CAU_TYPES.DAO_22, confidence: 80, prediction: str[0], 
+                          description: 'Đảo 2-2', strength: 'STRONG' });
         }
         
         // Cầu đảo 3-3
-        const patterns_33 = ['TTTXXX', 'XXXTTT'];
-        if (patterns_33.some(p => str.startsWith(p))) {
-            results.push({ type: this.CAU_TYPES.DAO_33, strength: 'Medium', confidence: 75, 
-                          prediction: str[0] === 'T' ? 'T' : 'X', description: 'Đảo 3-3' });
+        if (str.startsWith('TTTXXX') || str.startsWith('XXXTTT')) {
+            results.push({ type: this.CAU_TYPES.DAO_33, confidence: 75, prediction: str[0], 
+                          description: 'Đảo 3-3', strength: 'MEDIUM' });
         }
         
-        // Cầu 1-2-1 (T XX T)
-        const patterns_121 = ['TXXT', 'XTTX'];
-        if (patterns_121.some(p => str.startsWith(p))) {
-            results.push({ type: this.CAU_TYPES.DOI_121, strength: 'Medium', confidence: 75, 
-                          prediction: str[1] === str[2] ? str[3] : str[0], description: 'Nhịp 1-2-1' });
-        }
-        
-        // Cầu 2-1-2 (TT X TT)
-        const patterns_212 = ['TTXTT', 'XXTXX'];
-        if (patterns_212.some(p => str.startsWith(p))) {
-            results.push({ type: this.CAU_TYPES.DOI_212, strength: 'Medium', confidence: 70, 
-                          prediction: str[2] === 'X' ? 'T' : 'X', description: 'Nhịp 2-1-2' });
+        // Cầu 1-2-1
+        if (str.startsWith('TXXT') || str.startsWith('XTTX')) {
+            results.push({ type: this.CAU_TYPES.DOI_121, confidence: 75, prediction: str[3], 
+                          description: 'Nhịp 1-2-1', strength: 'MEDIUM' });
         }
         
         return results;
     }
 
-    // ─── 4. ALGORITHM: PHÁT HIỆN CẦU BẬC THANG ──────────────────────────
-    detectBacThang(str, numericData) {
+    // ─── 4. PHÂN TÍCH ĐIỂM NÚT ─────────────────────────────────────────
+    analyzeDiemNut(data) {
         const results = [];
+        if (data.length === 0) return results;
         
-        // T-T-TT-X-X-X (Bậc thang lên)
-        const bacThangLen = /^T{1,3}X{1,3}/;
-        if (bacThangLen.test(str) && str.length >= 6) {
-            const tCount = (str.match(/^T+/)[0] || '').length;
-            const xCount = (str.match(/^T+X+/)[0] || '').replace(/^T+/, '').length;
-            if (xCount > tCount) {
-                results.push({ type: this.CAU_TYPES.BAC_THANG, strength: 'Medium', confidence: 70, 
-                              prediction: 'X', description: 'Bậc thang tăng dần Xỉu' });
-            }
-        }
+        const last = data[0].tong;
+        const allTongs = data.map(d => d.tong);
+        const max = Math.max(...allTongs);
+        const min = Math.min(...allTongs);
         
-        // X-X-XX-T-T-T (Bậc thang lên Tài)
-        const bacThangXuong = /^X{1,3}T{1,3}/;
-        if (bacThangXuong.test(str) && str.length >= 6) {
-            const xCount = (str.match(/^X+/)[0] || '').length;
-            const tCount = (str.match(/^X+T+/)[0] || '').replace(/^X+/, '').length;
-            if (tCount > xCount) {
-                results.push({ type: this.CAU_TYPES.BAC_THANG, strength: 'Medium', confidence: 70, 
-                              prediction: 'T', description: 'Bậc thang tăng dần Tài' });
-            }
+        if (last >= 17) {
+            results.push({ type: this.CAU_TYPES.HOI, confidence: 90, prediction: 'X', 
+                          description: `Điểm cực đại ${last} - Hồi Xỉu`, strength: 'VERY STRONG' });
+        } else if (last <= 4) {
+            results.push({ type: this.CAU_TYPES.HOI, confidence: 90, prediction: 'T', 
+                          description: `Điểm cực tiểu ${last} - Hồi Tài`, strength: 'VERY STRONG' });
+        } else if (last >= 15) {
+            results.push({ type: this.CAU_TYPES.HOI, confidence: 75, prediction: 'X', 
+                          description: `Điểm cao ${last} - Khả năng về Xỉu`, strength: 'MEDIUM' });
+        } else if (last <= 5) {
+            results.push({ type: this.CAU_TYPES.HOI, confidence: 75, prediction: 'T', 
+                          description: `Điểm thấp ${last} - Khả năng về Tài`, strength: 'MEDIUM' });
         }
         
         return results;
     }
 
-    // ─── 5. ALGORITHM: PHÂN TÍCH XÁC SUẤT THỐNG KÊ ─────────────────────
+    // ─── 5. PHÂN TÍCH THỐNG KÊ ─────────────────────────────────────────
     analyzeProbability(data) {
         const total = data.length;
         const tCount = data.filter(d => d.result === 'T').length;
         const xCount = data.filter(d => d.result === 'X').length;
         
         return {
-            tRate: ((tCount / total) * 100).toFixed(1),
-            xRate: ((xCount / total) * 100).toFixed(1),
-            skew: tCount > xCount ? 'TÀI' : 'XỈU',
-            diff: Math.abs(tCount - xCount)
+            tCount, xCount, total,
+            tRate: total > 0 ? ((tCount / total) * 100).toFixed(1) : '0',
+            xRate: total > 0 ? ((xCount / total) * 100).toFixed(1) : '0',
+            trend: tCount > xCount ? 'THIÊN TÀI' : tCount < xCount ? 'THIÊN XỈU' : 'CÂN BẰNG'
         };
     }
 
-    // ─── 6. ALGORITHM: PHÂN TÍCH ĐIỂM NÚT ──────────────────────────────
-    analyzeDiemNut(diemArray) {
-        const results = [];
-        
-        // Tìm điểm cực đại/cực tiểu
-        const max = Math.max(...diemArray);
-        const min = Math.min(...diemArray);
-        const last = diemArray[0];
-        
-        if (last >= 17) {
-            results.push({ type: this.CAU_TYPES.HOI, strength: 'Very Strong', confidence: 90, 
-                          prediction: 'X', description: `Điểm cực đại ${last} - Hồi Xỉu` });
-        } else if (last <= 5) {
-            results.push({ type: this.CAU_TYPES.HOI, strength: 'Very Strong', confidence: 90, 
-                          prediction: 'T', description: `Điểm cực tiểu ${last} - Hồi Tài` });
-        } else if (last >= 15 && last <= 16) {
-            results.push({ type: this.CAU_TYPES.HOI, strength: 'Strong', confidence: 75, 
-                          prediction: 'X', description: `Điểm cao ${last} - Khả năng Xỉu` });
-        } else if (last <= 6 && last >= 5) {
-            results.push({ type: this.CAU_TYPES.HOI, strength: 'Strong', confidence: 75, 
-                          prediction: 'T', description: `Điểm thấp ${last} - Khả năng Tài` });
-        }
-        
-        return results;
-    }
-
-    // ─── 7. ALGORITHM: PHÂN TÍCH SÓNG ──────────────────────────────────
-    analyzeSongPattern(str) {
-        const results = [];
-        const last10 = str.substring(0, Math.min(10, str.length));
-        
-        // Đếm số lần đổi chiều trong 10 phiên gần nhất
-        let changes = 0;
-        for (let i = 0; i < last10.length - 1; i++) {
-            if (last10[i] !== last10[i + 1]) changes++;
-        }
-        
-        if (changes >= 7) {
-            results.push({ type: this.CAU_TYPES.SONG, strength: 'Medium', confidence: 65, 
-                          prediction: last10[0] === 'T' ? 'X' : 'T', 
-                          description: `Sóng cao tần - Đảo liên tục (${changes} lần/10 phiên)` });
-        }
-        
-        return results;
-    }
-
-    // ─── 8. ALGORITHM: PHÂN TÍCH TAM GIÁC ──────────────────────────────
-    analyzeTamGiac(str) {
-        const results = [];
-        const patterns = ['TTXTT', 'XXTXX', 'TTTXT', 'XXXTX'];
-        
-        if (patterns.some(p => str.startsWith(p))) {
-            results.push({ type: this.CAU_TYPES.TAM_GIAC, strength: 'Low', confidence: 60, 
-                          prediction: str[0] === 'T' ? 'X' : 'T', description: 'Mô hình tam giác' });
-        }
-        
-        return results;
-    }
-
-    // ─── 9. ALGORITHM: PHÂN TÍCH CHUỖI DÀI ────────────────────────────
-    analyzeLongPattern(str, data) {
-        const results = [];
-        const last20 = str.substring(0, 20);
-        const segments = last20.match(/.{1,5}/g) || [];
-        
-        // Tìm pattern lặp mỗi 5 phiên
-        if (segments.length >= 3) {
-            const seg1 = segments[0];
-            const seg2 = segments[1];
-            const seg3 = segments[2];
-            
-            if (seg1 === seg2) {
-                results.push({ type: 'CẦU CHU KỲ 5', strength: 'Medium', confidence: 70, 
-                              prediction: seg1[4] || seg1[0], description: 'Chu kỳ lặp 5 phiên' });
-            }
-            
-            if (seg1 === seg3 && seg1 !== seg2) {
-                results.push({ type: 'CẦU SÓNG DÀI', strength: 'Low', confidence: 55, 
-                              prediction: seg1[0], description: 'Sóng dài xen kẽ' });
-            }
-        }
-        
-        return results;
-    }
-
-    // ─── 10. ALGORITHM: PHÂN TÍCH ĐIỂM SỐ XÚC XẮC ────────────────────
-    analyzeDiceDetail(data) {
-        const results = [];
-        
-        if (data.length > 0 && data[0].chiTiet) {
-            const dice = data[0].chiTiet.split(',').map(Number);
-            const sum = dice.reduce((a, b) => a + b, 0);
-            const hasUnique = [...new Set(dice)].length === 3;
-            const hasPair = dice.some((d, i) => dice.indexOf(d) !== i);
-            
-            // 3 mặt khác nhau - xác suất Tài/Xỉu gần 50/50
-            if (hasUnique && sum === 11) {
-                results.push({ type: 'PHÂN TÍCH XÚC XẮC', strength: 'Low', confidence: 55, 
-                              prediction: 'T', description: 'Tổng 11 với 3 mặt khác nhau - Xác suất Tài cao hơn' });
-            }
-            
-            // Có cặp đôi - dễ ra Tài to hoặc Xỉu nhỏ
-            if (hasPair && sum >= 12) {
-                results.push({ type: 'PHÂN TÍCH XÚC XẮC', strength: 'Medium', confidence: 65, 
-                              prediction: 'T', description: 'Có cặp + tổng >= 12 - Tài tiếp' });
-            }
-            if (hasPair && sum <= 9) {
-                results.push({ type: 'PHÂN TÍCH XÚC XẮC', strength: 'Medium', confidence: 65, 
-                              prediction: 'X', description: 'Có cặp + tổng <= 9 - Xỉu tiếp' });
-            }
-        }
-        
-        return results;
-    }
-
-    // ─── 11. ALGORITHM: PHÂN TÍCH NHỊP ĐẬP ────────────────────────────
-    analyzeRhythm(str, numericData) {
-        const results = [];
-        const rhythm = [];
-        
-        for (let i = 0; i < numericData.length - 1; i++) {
-            rhythm.push(numericData[i] !== numericData[i + 1] ? 1 : 0);
-        }
-        
-        // Tìm nhịp lặp 2 (T-X-T-X hoặc X-T-X-T)
-        const rhythmStr = rhythm.join('').substring(0, 8);
-        if (rhythmStr.startsWith('1010101')) {
-            results.push({ type: this.CAU_TYPES.DAO_11, strength: 'Very Strong', confidence: 90, 
-                          prediction: numericData[0] === 1 ? 'X' : 'T', 
-                          description: 'Nhịp 1-1 hoàn hảo' });
-        }
-        
-        return results;
-    }
-
-    // ─── TỔNG HỢP TẤT CẢ KẾT QUẢ PHÂN TÍCH ────────────────────────────────
-    analyze(history) {
-        if (!history || history.length < 10) {
+    // ─── TỔNG HỢP PHÂN TÍCH ────────────────────────────────────────────
+    analyze(historyData) {
+        if (!historyData || historyData.length < 5) {
             return {
                 prediction: 'N/A',
                 confidence: 0,
-                pattern: 'Đang thu thập dữ liệu...',
-                details: []
+                pattern: 'Cần thêm dữ liệu (tối thiểu 5 phiên)',
+                advice: 'CHỜ THÊM DỮ LIỆU'
             };
         }
 
-        const data = this.convertHistory(history);
-        const str = this.getPatternString(data, 50);
-        const numericData = this.getNumericPattern(data, 50);
+        const data = this.convertHistory(historyData);
+        const str = this.getPatternString(data, 30);
         const allResults = [];
         
-        // Chạy tất cả các thuật toán phân tích
-        allResults.push(...this.detectBetCau(str, numericData));
-        allResults.push(...this.detectDaoCau(str, numericData));
-        allResults.push(...this.detectBacThang(str, numericData));
-        allResults.push(...this.analyzeDiemNut(data.map(d => d.diem)));
-        allResults.push(...this.analyzeSongPattern(str));
-        allResults.push(...this.analyzeTamGiac(str));
-        allResults.push(...this.analyzeLongPattern(str, data));
-        allResults.push(...this.analyzeDiceDetail(data));
-        allResults.push(...this.analyzeRhythm(str, numericData));
+        // Chạy tất cả các thuật toán
+        allResults.push(...this.detectBetCau(str));
+        allResults.push(...this.detectDaoCau(str));
+        allResults.push(...this.analyzeDiemNut(data));
         
-        // Sắp xếp theo độ tin cậy giảm dần
+        // Phân tích thống kê
+        const prob = this.analyzeProbability(data);
+        if (prob.trend !== 'CÂN BẰNG') {
+            const trendPred = prob.trend === 'THIÊN TÀI' ? 'T' : 'X';
+            allResults.push({ type: this.CAU_TYPES.NGHIENG, confidence: 65, prediction: trendPred, 
+                              description: `Thiên về ${prob.trend} (${Math.max(prob.tRate, prob.xRate)}%)`, 
+                              strength: 'LOW' });
+        }
+        
+        // Sắp xếp theo confidence giảm dần
         allResults.sort((a, b) => b.confidence - a.confidence);
         
-        // Lấy kết quả tốt nhất
         const bestResult = allResults[0];
-        const prob = this.analyzeProbability(data);
         
-        // Tổng hợp lời khuyên
+        // Lời khuyên
         let advice = 'THĂM DÒ';
-        if (bestResult && bestResult.confidence >= 90) {
-            advice = 'VÀO TIỀN MẠNH';
-        } else if (bestResult && bestResult.confidence >= 80) {
-            advice = 'VÀO TIỀN VỪA';
-        } else if (bestResult && bestResult.confidence >= 70) {
-            advice = 'ĐÁNH NHỎ';
-        }
-        
-        // Đếm số lần T và X trong top dự đoán
-        const topPredictions = allResults.slice(0, 3);
-        const tPredictions = topPredictions.filter(r => r.prediction === 'T').length;
-        const xPredictions = topPredictions.filter(r => r.prediction === 'X').length;
-        
-        // Quyết định cuối cùng
-        let finalPrediction = bestResult ? bestResult.prediction : 'T';
-        let finalConfidence = bestResult ? bestResult.confidence : 50;
-        
-        // Nếu có sự đồng thuận cao trong top 3
-        if (tPredictions >= 2 && bestResult.prediction !== 'T') {
-            finalPrediction = 'T';
-            finalConfidence = Math.max(finalConfidence, 75);
-        } else if (xPredictions >= 2 && bestResult.prediction !== 'X') {
-            finalPrediction = 'X';
-            finalConfidence = Math.max(finalConfidence, 75);
-        }
+        if (bestResult && bestResult.confidence >= 90) advice = 'VÀO TIỀN MẠNH';
+        else if (bestResult && bestResult.confidence >= 80) advice = 'VÀO TIỀN VỪA';
+        else if (bestResult && bestResult.confidence >= 70) advice = 'ĐÁNH NHỎ';
         
         return {
-            prediction: finalPrediction,
-            confidence: finalConfidence,
+            prediction: bestResult ? bestResult.prediction : (Math.random() > 0.5 ? 'T' : 'X'),
+            confidence: bestResult ? bestResult.confidence : 50,
             pattern: bestResult ? bestResult.description : 'Cầu loạn - Đánh nhỏ',
             patternType: bestResult ? bestResult.type : 'KHÔNG XÁC ĐỊNH',
-            strength: bestResult ? bestResult.strength : 'Unknown',
+            strength: bestResult ? bestResult.strength : 'UNKNOWN',
             allPatterns: allResults.slice(0, 5),
             probability: prob,
             advice: advice
@@ -388,227 +204,383 @@ class SunwinAdvancedPredictor {
 
 const predictor = new SunwinAdvancedPredictor();
 
+// ─── LƯU TRỮ LỊCH SỬ CÁC PHIÊN ĐÃ GỌI ────────────────────────────────────
+let sessionHistory = [];
+const MAX_STORED = 100;
+
 // ─── API ENDPOINTS ──────────────────────────────────────────────────────────
 
+// Endpoint chính: Gọi API Sunwin, lưu lịch sử và phân tích
 app.get('/api/predict', async (req, res) => {
     try {
+        // Gọi API Sunwin lấy phiên mới nhất
         const response = await axios.get('https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx', {
-            timeout: 5000
+            timeout: 10000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0'
+            }
         });
         
-        const history = response.data;
-        if (!Array.isArray(history) || history.length === 0) {
-            return res.status(500).json({ error: "API Sunwin không trả về mảng dữ liệu" });
+        const newSession = response.data;
+        
+        // Kiểm tra dữ liệu hợp lệ
+        if (!newSession || !newSession.phien) {
+            return res.status(500).json({ 
+                error: "API Sunwin trả về dữ liệu không hợp lệ",
+                raw_data: newSession 
+            });
         }
 
-        const lastSession = history[0];
-        const prediction = predictor.analyze(history);
+        // Parse kết quả Tài/Xỉu từ tổng điểm
+        const tong = newSession.tong || 0;
+        const ketQua = tong >= 11 ? 'T' : 'X';
+        const ketQuaText = tong >= 11 ? 'Tài' : 'Xỉu';
 
+        // Thêm vào lịch sử nếu là phiên mới
+        const existingIndex = sessionHistory.findIndex(s => s.phien === newSession.phien);
+        if (existingIndex === -1) {
+            sessionHistory.unshift(newSession);
+            if (sessionHistory.length > MAX_STORED) {
+                sessionHistory = sessionHistory.slice(0, MAX_STORED);
+            }
+        }
+
+        // Phân tích với toàn bộ lịch sử
+        const prediction = predictor.analyze(sessionHistory);
+
+        // Trả về kết quả
         res.json({
             status: "success",
             timestamp: new Date().toISOString(),
             current_session: {
-                phien: lastSession.phien,
-                ket_qua: parseInt(lastSession.ket_qua) > 10 ? "TÀI" : "XỈU",
-                diem: lastSession.ket_qua,
-                xuc_xac: lastSession.chi_tiet
+                phien: newSession.phien,
+                ket_qua: ketQuaText,
+                ky_hieu: ketQua,
+                tong_diem: tong,
+                xuc_xac: [
+                    newSession.xuc_xac_1, 
+                    newSession.xuc_xac_2, 
+                    newSession.xuc_xac_3
+                ],
+                thoi_gian: newSession.thoi_gian
             },
             prediction: {
-                next_bet: prediction.prediction,
+                next_bet: prediction.prediction === 'T' ? 'TÀI' : 'XỈU',
+                ky_hieu: prediction.prediction,
                 confidence: `${prediction.confidence}%`,
-                pattern_detected: prediction.pattern,
+                pattern: prediction.pattern,
                 pattern_type: prediction.patternType,
                 strength: prediction.strength,
-                advice: prediction.advice,
-                probability_stats: {
-                    tai_rate: `${prediction.probability.tRate}%`,
-                    xiu_rate: `${prediction.probability.xRate}%`,
-                    trend: prediction.probability.skew
-                }
+                advice: prediction.advice
             },
-            detailed_analysis: {
-                top_5_patterns: prediction.allPatterns.map(p => ({
-                    type: p.type,
-                    description: p.description,
-                    prediction: p.prediction,
-                    confidence: `${p.confidence}%`,
-                    strength: p.strength
-                })),
-                total_patterns_found: prediction.allPatterns.length
+            statistics: {
+                total_sessions: sessionHistory.length,
+                analyzed: prediction.probability.total,
+                tai_count: prediction.probability.tCount,
+                xiu_count: prediction.probability.xCount,
+                tai_rate: `${prediction.probability.tRate}%`,
+                xiu_rate: `${prediction.probability.xRate}%`,
+                trend: prediction.probability.trend
             },
-            history_summary: history.slice(0, 10).map(h => ({
-                phien: h.phien,
-                result: parseInt(h.ket_qua) > 10 ? "T" : "X",
-                diem: parseInt(h.ket_qua),
-                chi_tiet: h.chi_tiet
+            top_patterns: prediction.allPatterns.map(p => ({
+                type: p.type,
+                description: p.description,
+                prediction: p.prediction === 'T' ? 'TÀI' : 'XỈU',
+                confidence: `${p.confidence}%`,
+                strength: p.strength
+            })),
+            recent_history: sessionHistory.slice(0, 10).map(s => ({
+                phien: s.phien,
+                result: s.tong >= 11 ? 'T' : 'X',
+                result_text: s.tong >= 11 ? 'Tài' : 'Xỉu',
+                tong: s.tong,
+                xuc_xac: [s.xuc_xac_1, s.xuc_xac_2, s.xuc_xac_3],
+                thoi_gian: s.thoi_gian
             }))
         });
 
     } catch (error) {
+        // Xử lý lỗi chi tiết
+        let errorMsg = "Không thể kết nối API Sunwin";
+        if (error.code === 'ECONNREFUSED') errorMsg = "API Sunwin từ chối kết nối";
+        else if (error.code === 'ETIMEDOUT') errorMsg = "API Sunwin timeout (quá 10s)";
+        else if (error.response) errorMsg = `API Sunwin lỗi HTTP ${error.response.status}`;
+        
         res.status(500).json({ 
             status: "error", 
-            message: "Không thể kết nối API Sunwin",
-            details: error.message 
+            message: errorMsg,
+            details: error.message,
+            solution: "Kiểm tra lại URL API hoặc thử gọi trực tiếp API Sunwin"
         });
     }
 });
 
-// API chi tiết từng loại cầu
-app.get('/api/patterns', (req, res) => {
+// Endpoint xem lịch sử đã lưu
+app.get('/api/history', (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
     res.json({
-        available_patterns: Object.values(predictor.CAU_TYPES),
-        algorithms: [
-            "1. Phát hiện cầu bệt (5+ phiên)",
-            "2. Phát hiện cầu đảo 1-1, 2-2, 3-3",
-            "3. Phát hiện cầu bậc thang",
-            "4. Phân tích điểm nút hồi cầu",
-            "5. Phân tích sóng cao tần",
-            "6. Phân tích mô hình tam giác",
-            "7. Phân tích chu kỳ dài hạn",
-            "8. Phân tích chi tiết xúc xắc",
-            "9. Phân tích nhịp đập",
-            "10. Tổng hợp xác suất thống kê"
-        ]
+        total_stored: sessionHistory.length,
+        data: sessionHistory.slice(0, limit).map(s => ({
+            phien: s.phien,
+            result: s.tong >= 11 ? 'T' : 'X',
+            result_text: s.tong >= 11 ? 'Tài' : 'Xỉu',
+            tong: s.tong,
+            xuc_xac: [s.xuc_xac_1, s.xuc_xac_2, s.xuc_xac_3],
+            thoi_gian: s.thoi_gian
+        }))
     });
 });
 
-// Trang dashboard
+// Endpoint test gọi trực tiếp API Sunwin
+app.get('/api/test-sunwin', async (req, res) => {
+    try {
+        const response = await axios.get('https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx', {
+            timeout: 10000
+        });
+        const data = response.data;
+        const tong = data.tong || 0;
+        
+        res.json({
+            status: "success",
+            raw_response: data,
+            parsed: {
+                phien: data.phien,
+                tong: tong,
+                ket_qua: tong >= 11 ? 'TÀI' : 'XỈU',
+                ky_hieu: tong >= 11 ? 'T' : 'X',
+                xuc_xac: [data.xuc_xac_1, data.xuc_xac_2, data.xuc_xac_3],
+                thoi_gian: data.thoi_gian
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: "error",
+            message: error.message,
+            code: error.code
+        });
+    }
+});
+
+// Dashboard
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Sunwin Advanced AI Predictor</title>
+            <title>🎯 Sunwin AI Predictor</title>
+            <meta charset="UTF-8">
             <style>
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body {
-                    font-family: 'Segoe UI', sans-serif;
-                    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
-                    color: white;
-                    min-height: 100vh;
+                    font-family: 'Segoe UI', system-ui, sans-serif;
+                    background: #0d1117;
+                    color: #c9d1d9;
                     padding: 20px;
                 }
                 .container {
-                    max-width: 900px;
+                    max-width: 800px;
                     margin: 0 auto;
-                    background: rgba(255,255,255,0.05);
-                    border-radius: 20px;
-                    padding: 30px;
-                    backdrop-filter: blur(10px);
                 }
                 h1 {
                     text-align: center;
                     background: linear-gradient(45deg, #f6d365, #fda085);
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
-                    font-size: 2.5em;
-                    margin-bottom: 10px;
-                }
-                .subtitle {
-                    text-align: center;
-                    color: #888;
-                    margin-bottom: 30px;
-                }
-                .stats-grid {
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 15px;
-                    margin-bottom: 30px;
-                }
-                .stat-card {
-                    background: rgba(255,255,255,0.08);
-                    padding: 20px;
-                    border-radius: 15px;
-                    text-align: center;
-                    transition: transform 0.3s;
-                }
-                .stat-card:hover {
-                    transform: translateY(-5px);
-                    background: rgba(255,255,255,0.12);
-                }
-                .stat-value {
                     font-size: 2em;
-                    font-weight: bold;
-                    margin: 10px 0;
-                }
-                .stat-label {
-                    color: #aaa;
-                    font-size: 0.9em;
-                }
-                .api-section {
-                    background: rgba(0,0,0,0.3);
-                    padding: 20px;
-                    border-radius: 15px;
                     margin: 20px 0;
                 }
+                .card {
+                    background: #161b22;
+                    border: 1px solid #30363d;
+                    border-radius: 12px;
+                    padding: 20px;
+                    margin: 15px 0;
+                }
+                .result-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, 1fr);
+                    gap: 15px;
+                    margin: 20px 0;
+                }
+                .result-box {
+                    background: #1c2128;
+                    padding: 15px;
+                    border-radius: 8px;
+                    text-align: center;
+                }
+                .result-box.TAI { border: 2px solid #238636; }
+                .result-box.XIU { border: 2px solid #da3633; }
+                .big-text {
+                    font-size: 2em;
+                    font-weight: bold;
+                }
+                .green { color: #3fb950; }
+                .red { color: #f85149; }
+                .yellow { color: #d2991d; }
                 code {
-                    background: #333;
-                    padding: 5px 10px;
-                    border-radius: 5px;
-                    color: #f6d365;
+                    background: #1c2128;
+                    padding: 3px 8px;
+                    border-radius: 4px;
+                    font-size: 0.9em;
                 }
                 .btn {
                     display: inline-block;
-                    padding: 12px 30px;
-                    background: linear-gradient(45deg, #f6d365, #fda085);
-                    color: black;
+                    padding: 10px 25px;
+                    background: #238636;
+                    color: white;
                     text-decoration: none;
-                    border-radius: 25px;
+                    border-radius: 6px;
+                    margin: 5px;
                     font-weight: bold;
-                    margin: 10px;
-                    transition: transform 0.3s;
                 }
-                .btn:hover {
-                    transform: scale(1.05);
+                .btn:hover { background: #2ea043; }
+                .btn-outline {
+                    background: transparent;
+                    border: 1px solid #30363d;
+                }
+                .btn-outline:hover { background: #1c2128; }
+                .loading {
+                    text-align: center;
+                    padding: 20px;
+                    color: #8b949e;
+                }
+                #result {
+                    transition: all 0.3s;
+                }
+                pre {
+                    background: #0d1117;
+                    padding: 15px;
+                    border-radius: 8px;
+                    overflow-x: auto;
+                    font-size: 0.85em;
+                    border: 1px solid #30363d;
+                }
+                .api-info {
+                    display: flex;
+                    gap: 15px;
+                    flex-wrap: wrap;
+                    justify-content: center;
                 }
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>🎯 Sunwin Advanced AI Predictor</h1>
-                <p class="subtitle">200+ Cầu Mẫu • 10+ Thuật Toán Phân Tích Chuyên Sâu</p>
+                <h1>🎯 Sunwin AI Predictor</h1>
+                <p style="text-align:center;color:#8b949e;">Phân tích Tài Xỉu • Gọi API Sunwin trực tiếp</p>
                 
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-label">🎯 Độ Chính Xác</div>
-                        <div class="stat-value" style="color: #4caf50;">85-95%</div>
-                        <div class="stat-label">Trên cầu rõ ràng</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">🔍 Thuật Toán</div>
-                        <div class="stat-value" style="color: #f6d365;">10+</div>
-                        <div class="stat-label">Pattern matching</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">📊 Mẫu Cầu</div>
-                        <div class="stat-value" style="color: #fda085;">200+</div>
-                        <div class="stat-label">Biến thể cầu</div>
-                    </div>
+                <div style="text-align:center;margin:20px 0;">
+                    <button class="btn" onclick="predict()">🎲 DỰ ĐOÁN NGAY</button>
+                    <a href="/api/test-sunwin" class="btn btn-outline" target="_blank">🔍 Test API Sunwin</a>
+                    <a href="/api/history" class="btn btn-outline" target="_blank">📊 Xem Lịch Sử</a>
                 </div>
-
-                <div class="api-section">
-                    <h3>🚀 API Endpoints</h3>
-                    <p>🔗 <code>GET /api/predict</code> - Lấy dự đoán mới nhất</p>
-                    <p>📊 <code>GET /api/patterns</code> - Danh sách các loại cầu</p>
-                    <br>
-                    <a href="/api/predict" class="btn">Xem Dự Đoán</a>
-                    <a href="/api/patterns" class="btn">Xem Mẫu Cầu</a>
+                
+                <div id="result"></div>
+                
+                <div class="card" style="margin-top:20px;">
+                    <h3>📡 API Endpoints</h3>
+                    <p><code>GET /api/predict</code> - Dự đoán + phân tích</p>
+                    <p><code>GET /api/history</code> - Lịch sử phiên đã lưu</p>
+                    <p><code>GET /api/test-sunwin</code> - Test trực tiếp API Sunwin</p>
                 </div>
-
-                <div class="api-section">
-                    <h3>🧠 Các Thuật Toán Phân Tích</h3>
-                    <p>1. 🟢 Phát hiện cầu bệt (Very Strong: 5+ phiên)</p>
-                    <p>2. 🔵 Phát hiện cầu đảo 1-1, 2-2, 3-3</p>
-                    <p>3. 🟣 Phát hiện cầu bậc thang</p>
-                    <p>4. 🔴 Phân tích điểm nút hồi cầu</p>
-                    <p>5. 🟡 Phân tích sóng cao tần</p>
-                    <p>6. 🟠 Phân tích mô hình tam giác</p>
-                    <p>7. ⚪ Phân tích chu kỳ dài hạn</p>
-                    <p>8. 🟤 Phân tích chi tiết xúc xắc</p>
-                    <p>9. 🔶 Phân tích nhịp đập</p>
-                    <p>10. 📈 Tổng hợp xác suất thống kê</p>
+                
+                <div class="card">
+                    <h3>🎯 Quy Tắc Tài Xỉu</h3>
+                    <p>• <span class="red">Tổng 3 xúc xắc >= 11</span> → <strong>Tài (T)</strong></p>
+                    <p>• <span class="green">Tổng 3 xúc xắc {"<="} 10</span> → <strong>Xỉu (X)</strong></p>
                 </div>
             </div>
+            
+            <script>
+                async function predict() {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.innerHTML = '<div class="loading">⏳ Đang gọi API Sunwin và phân tích...</div>';
+                    
+                    try {
+                        const response = await fetch('/api/predict');
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            const cs = data.current_session;
+                            const pred = data.prediction;
+                            
+                            resultDiv.innerHTML = \`
+                                <div class="card">
+                                    <h3>📍 Phiên Hiện Tại: #\${cs.phien}</h3>
+                                    <div class="result-grid">
+                                        <div class="result-box \${cs.ky_hieu === 'T' ? 'TAI' : 'XIU'}">
+                                            <small>KẾT QUẢ</small>
+                                            <div class="big-text \${cs.ky_hieu === 'T' ? 'red' : 'green'}">\${cs.ket_qua}</div>
+                                            <small>Tổng: \${cs.tong_diem}</small>
+                                        </div>
+                                        <div class="result-box">
+                                            <small>XÚC XẮC</small>
+                                            <div class="big-text">\${cs.xuc_xac.join(' - ')}</div>
+                                        </div>
+                                        <div class="result-box">
+                                            <small>THỜI GIAN</small>
+                                            <div>\${cs.thoi_gian || 'N/A'}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="card" style="border-left: 4px solid \${pred.ky_hieu === 'T' ? '#f85149' : '#3fb950'}">
+                                    <h3>🔮 DỰ ĐOÁN PHIÊN TIẾP THEO</h3>
+                                    <div class="result-grid">
+                                        <div class="result-box \${pred.ky_hieu === 'T' ? 'TAI' : 'XIU'}">
+                                            <small>DỰ ĐOÁN</small>
+                                            <div class="big-text \${pred.ky_hieu === 'T' ? 'red' : 'green'}">\${pred.next_bet}</div>
+                                        </div>
+                                        <div class="result-box">
+                                            <small>ĐỘ TIN CẬY</small>
+                                            <div class="big-text yellow">\${pred.confidence}</div>
+                                        </div>
+                                        <div class="result-box">
+                                            <small>LỜI KHUYÊN</small>
+                                            <div class="big-text" style="font-size:1.2em;">\${pred.advice}</div>
+                                        </div>
+                                    </div>
+                                    <p>📊 <strong>Cầu phát hiện:</strong> \${pred.pattern} (\${pred.strength})</p>
+                                </div>
+                                
+                                <div class="card">
+                                    <h3>📈 Thống Kê \${data.statistics.total_sessions} Phiên</h3>
+                                    <p>Tài: \${data.statistics.tai_count} lần (\${data.statistics.tai_rate}) | 
+                                       Xỉu: \${data.statistics.xiu_count} lần (\${data.statistics.xiu_rate})</p>
+                                    <p>Xu hướng: <strong>\${data.statistics.trend}</strong></p>
+                                </div>
+                                
+                                <div class="card">
+                                    <h3>📜 Lịch Sử 10 Phiên Gần Nhất</h3>
+                                    <pre>\${data.recent_history.map(h => 
+                                        '#' + h.phien + ' | ' + h.result_text + ' (' + h.tong + ') | Xúc xắc: ' + h.xuc_xac.join(',')
+                                    ).join('\\n')}</pre>
+                                </div>
+                            \`;
+                        } else {
+                            resultDiv.innerHTML = \`
+                                <div class="card" style="border: 1px solid #f85149;">
+                                    <h3 style="color:#f85149;">❌ Lỗi</h3>
+                                    <p>\${data.message || data.error}</p>
+                                    <p>\${data.solution || ''}</p>
+                                </div>
+                            \`;
+                        }
+                    } catch (error) {
+                        resultDiv.innerHTML = \`
+                            <div class="card" style="border: 1px solid #f85149;">
+                                <h3 style="color:#f85149;">❌ Lỗi Kết Nối</h3>
+                                <p>\${error.message}</p>
+                            </div>
+                        \`;
+                    }
+                }
+                
+                // Tự động gọi dự đoán khi load trang
+                predict();
+                
+                // Auto refresh mỗi 30 giây
+                setInterval(predict, 30000);
+            </script>
         </body>
         </html>
     `);
@@ -616,12 +588,12 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log('🌟═══════════════════════════════════════🌟');
-    console.log('  SUNWIN ADVANCED AI PREDICTOR SYSTEM');
+    console.log('  🎯 SUNWIN AI PREDICTOR - TÀI XỈU');
     console.log('🌟═══════════════════════════════════════🌟');
     console.log(`🚀 Server: http://localhost:${PORT}`);
-    console.log(`🔗 API: http://localhost:${PORT}/api/predict`);
-    console.log(`📊 Patterns: http://localhost:${PORT}/api/patterns`);
-    console.log('✅ 10+ Thuật toán phân tích đã sẵn sàng');
-    console.log('✅ 200+ Biến thể cầu đã được nạp');
+    console.log(`🔗 API Dự Đoán: http://localhost:${PORT}/api/predict`);
+    console.log(`📊 Lịch Sử: http://localhost:${PORT}/api/history`);
+    console.log(`🔍 Test API: http://localhost:${PORT}/api/test-sunwin`);
+    console.log('✅ Quy tắc: Tổng >= 11 → Tài (T) | Tổng <= 10 → Xỉu (X)');
     console.log('🌟═══════════════════════════════════════🌟');
 });
