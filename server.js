@@ -1,28 +1,19 @@
 const express = require('express');
 const axios = require('axios');
-const path = require('path');
-
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Lưu dữ liệu
 let sessionHistory = [];
 let predictionLog = [];
 const MAX = 200;
 
-// Phân tích cầu
 function phanTich(history) {
     const len = history.length;
     
     if (len === 0) {
         return {
-            duDoan: 'TAI',
-            kyHieu: 'T',
-            doTinCay: 30,
-            tiLe: '30%',
-            cau: 'Chua co du lieu',
-            loai: 'MAC DINH',
-            sucManh: 'YEU',
+            duDoan: 'TAI', kyHieu: 'T', doTinCay: 30, tiLe: '30%',
+            cau: 'Chua co du lieu', loai: 'MAC DINH', sucManh: 'YEU',
             loiKhuyen: 'DOI DU LIEU'
         };
     }
@@ -60,7 +51,7 @@ function phanTich(history) {
         all.push({ name: 'DAO 2-2', pred: 'X', conf: 80, type: 'DAO' });
     }
 
-    // HOI CAU
+    // HOI
     if (lastTong >= 17) {
         all.push({ name: 'HOI XIU', pred: 'X', conf: 92, type: 'HOI' });
     } else if (lastTong <= 4) {
@@ -103,9 +94,7 @@ function phanTich(history) {
     const best = all[0];
 
     const thongKe = {
-        tong: len,
-        tai: tCount,
-        xiu: xCount,
+        tong: len, tai: tCount, xiu: xCount,
         tiLeTai: ((tCount/len)*100).toFixed(1) + '%',
         tiLeXiu: ((xCount/len)*100).toFixed(1) + '%',
         xuHuong: tCount > xCount ? 'THIEN TAI' : xCount > tCount ? 'THIEN XIU' : 'CAN BANG'
@@ -129,18 +118,12 @@ function phanTich(history) {
     return {
         duDoan: lastKQ === 'T' ? 'XIU' : 'TAI',
         kyHieu: lastKQ === 'T' ? 'X' : 'T',
-        doTinCay: 50,
-        tiLe: '50%',
-        cau: 'DANH NGUOC',
-        loai: 'DAO NGUOC',
-        sucManh: 'YEU',
-        loiKhuyen: 'THAM DO',
-        tatCa: [],
-        thongKe: thongKe
+        doTinCay: 50, tiLe: '50%',
+        cau: 'DANH NGUOC', loai: 'DAO NGUOC', sucManh: 'YEU',
+        loiKhuyen: 'THAM DO', tatCa: [], thongKe: thongKe
     };
 }
 
-// Check du doan dung/sai
 function checkDD(phien, kq) {
     const p = predictionLog.find(x => x.phienDD === phien && x.kqThuc === null);
     if (p) {
@@ -149,15 +132,14 @@ function checkDD(phien, kq) {
     }
 }
 
-// Routes
+// TRANG CHU - HTML TRA VE TRUC TIEP
 app.get('/', function(req, res) {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:650px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:10px 0;color:#f6d365}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.box{padding:10px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:1.8em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:10px 20px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:.9em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BET{background:#da3633}.tag.DAO{background:#1f6feb}.tag.NHIP{background:#8957e5}.tag.HOI{background:#d2991d;color:#000}.tag.NGHIENG{background:#3fb950;color:#000}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:.75em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI</h1><p style="text-align:center;color:#8b949e;font-size:.8em">DU DOAN TAI XIU</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DU DOAN</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 SU</a></div><div id="out"><div class="loading">⏳ Dang tai...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ Dang phan tich...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.current||{};var dd=d.prediction||{};var tk=d.stats||{};var cau=d.patterns||[];var log=d.pred_log||[];var html="";html+=\'<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center>📌 DU DOAN PHIEN TIEP THEO</h3><div class=grid3><div class=box><small>PHIEN</small><div class="big yellow">#\'+dd.phien_du_doan+\'</div></div><div class="box \'+(dd.ky_hieu=="T"?"TAI":"XIU")+\'"><small>DU DOAN</small><div class=big style=font-size:2.5em;color:\'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+dd.du_doan+\'</div></div><div class=box><small>TI LE THANG</small><div class="big yellow">\'+dd.ti_le_thang+\'</div></div></div><p style=margin-top:8px>📊 <b>\'+dd.cau+\'</b> <span class="tag \'+dd.loai_cau+\'">\'+dd.loai_cau+\'</span> | 💡 <b>\'+dd.loi_khuyen+\'</b></p></div>\';html+=\'<div class=card><h3>📍 PHIEN TRUOC: #\'+p.phien_truoc+\'</h3><div class=grid2><div class="box \'+(p.ky_hieu=="T"?"TAI":"XIU")+\'"><small>KET QUA</small><div class=big style=color:\'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+p.ket_qua+\'</div><small>Tong: \'+p.tong+\'</small></div><div class=box><small>XUC XAC</small><div class=big>\'+(p.xuc_xac||[]).join(" - ")+\'</div></div></div></div>\';html+=\'<div class=card><h3>📈 THONG KE \'+tk.tong_phien+\' PHIEN</h3><div class=grid2><div class=box><small>TAI</small><div class="big red">\'+tk.tai+\'</div><small>\'+tk.ti_le_tai+\'</small></div><div class=box><small>XIU</small><div class="big green">\'+tk.xiu+\'</div><small>\'+tk.ti_le_xiu+\'</small></div></div><p>Xu huong: <b>\'+tk.xu_huong+\'</b> | Du doan dung: <b>\'+tk.ti_le_dung+\'</b></p></div>\';if(cau.length>0){html+=\'<div class=card><h3>🔍 CAU PHAT HIEN</h3>\';for(var i=0;i<cau.length;i++){var c=cau[i];html+=\'<p style=margin:3px 0;font-size:.8em;padding:4px">\'+(i+1)+\'. <span class="tag \'+c.type+\'">\'+c.type+\'</span> <b>\'+c.name+\'</b> → <b style=color:\'+(c.predict=="TAI"?"#f85149":"#3fb950")+\'>\'+c.predict+\'</b> (\'+c.conf+\')</p>\'}html+=\'</div>\'}if(log.length>0){html+=\'<div class=card><h3>📋 LICH SU DU DOAN</h3><pre>\';for(var j=0;j<log.length;j++){var l=log[j];var tt=l.dung===true?"✅ DUNG":l.dung===false?"❌ SAI":"⏳ CHO";html+=\'#\'+l.phien+\' | DD: \'+l.du_doan+\' | KQ: \'+(l.ket_qua||"DOI")+\' | \'+tt+\' | \'+l.ti_le+\'\\n\'}html+=\'</pre></div>\'}if(d.recent){html+=\'<div class=card><h3>📜 15 PHIEN GAN NHAT</h3><pre>\';for(var k=0;k<d.recent.length;k++){var h=d.recent[k];html+=\'#\'+h.phien+\' | \'+h.ket_qua+\' (\'+h.tong+\') | \'+h.xuc_xac.join(",")+\'\\n\'}html+=\'</pre></div>\'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML=\'<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LOI</h3><p>\'+e.message+\'</p><button class=btn onclick=load()>🔄 THU LAI</button></div>\'}}load();setInterval(load,30000);</script></body></html>');
 });
 
 app.get('/api/predict', async function(req, res) {
     try {
         let newData = null;
-        
         try {
             const resp = await axios.get('https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx', {
                 timeout: 10000,
@@ -177,16 +159,11 @@ app.get('/api/predict', async function(req, res) {
             var exists = sessionHistory.find(function(s) { return s.phien === phien; });
             if (!exists) {
                 sessionHistory.push({
-                    phien: phien,
-                    tong: tong,
-                    kq: kq,
-                    kqText: kqText,
+                    phien: phien, tong: tong, kq: kq, kqText: kqText,
                     xucXac: [newData.xuc_xac_1, newData.xuc_xac_2, newData.xuc_xac_3],
                     time: newData.thoi_gian
                 });
-                if (sessionHistory.length > MAX) {
-                    sessionHistory = sessionHistory.slice(-MAX);
-                }
+                if (sessionHistory.length > MAX) sessionHistory = sessionHistory.slice(-MAX);
             }
         }
 
@@ -199,16 +176,11 @@ app.get('/api/predict', async function(req, res) {
             var existPred = predictionLog.find(function(p) { return p.phienDD === phienDD; });
             if (!existPred) {
                 predictionLog.push({
-                    phienDD: phienDD,
-                    duDoan: ketQua.duDoan,
-                    tiLe: ketQua.tiLe,
-                    cau: ketQua.cau,
-                    kqThuc: null,
-                    dung: null
+                    phienDD: phienDD, duDoan: ketQua.duDoan,
+                    tiLe: ketQua.tiLe, cau: ketQua.cau,
+                    kqThuc: null, dung: null
                 });
-                if (predictionLog.length > 100) {
-                    predictionLog = predictionLog.slice(-100);
-                }
+                if (predictionLog.length > 100) predictionLog = predictionLog.slice(-100);
             }
         }
 
@@ -250,29 +222,13 @@ app.get('/api/predict', async function(req, res) {
                 ti_le_dung: tiLeDung
             },
             patterns: ketQua.tatCa.map(function(c) {
-                return {
-                    name: c.name,
-                    type: c.type,
-                    predict: c.pred === 'T' ? 'TAI' : 'XIU',
-                    conf: c.conf + '%'
-                };
+                return { name: c.name, type: c.type, predict: c.pred === 'T' ? 'TAI' : 'XIU', conf: c.conf + '%' };
             }),
             pred_log: predictionLog.slice(-10).reverse().map(function(p) {
-                return {
-                    phien: p.phienDD,
-                    du_doan: p.duDoan,
-                    ti_le: p.tiLe,
-                    ket_qua: p.kqThuc || 'DOI',
-                    dung: p.dung
-                };
+                return { phien: p.phienDD, du_doan: p.duDoan, ti_le: p.tiLe, ket_qua: p.kqThuc || 'DOI', dung: p.dung };
             }),
             recent: sessionHistory.slice(-15).reverse().map(function(s) {
-                return {
-                    phien: s.phien,
-                    ket_qua: s.kqText,
-                    tong: s.tong,
-                    xuc_xac: s.xucXac
-                };
+                return { phien: s.phien, ket_qua: s.kqText, tong: s.tong, xuc_xac: s.xucXac };
             })
         });
     } catch(err) {
@@ -287,8 +243,7 @@ app.get('/api/history', function(req, res) {
     res.json({
         tong_phien: sessionHistory.length,
         tong_du_doan: predictionLog.length,
-        dung: dungCount,
-        sai: saiCount,
+        dung: dungCount, sai: saiCount,
         ti_le_dung: (dungCount+saiCount) > 0 ? ((dungCount/(dungCount+saiCount))*100).toFixed(1)+'%' : 'N/A',
         sessions: sessionHistory.slice(-30).reverse().map(function(s) {
             return { phien: s.phien, ket_qua: s.kqText, tong: s.tong, xuc_xac: s.xucXac };
