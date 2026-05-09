@@ -1,13 +1,13 @@
 {
-  "name": "sunwin-ai-bot",
+  "name": "sunwin-ai",
   "version": "1.0.0",
-  "description": "AI Predictor for Sunwin",
+  "description": "Sunwin AI Predictor",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
   }
 }
