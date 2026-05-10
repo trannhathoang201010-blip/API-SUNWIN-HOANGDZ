@@ -1,574 +1,363 @@
 const express = require('express');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 
-let sessionHistory = [];
-let predictionLog = [];
-const MAX = 500;
+const API_URL = 'https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx';
+const LEARNING_FILE = 'learning_data.json';
+const HISTORY_FILE = 'prediction_history.json';
+const TELEGRAM_ID = '@tranhoang2286';
 
-// ============================================================================
-// 200+ CONG THUC CAU
-// ============================================================================
-const CAU_FORMULA = {
-    'X331': { next: 'X', conf: 85 }, 'X422': { next: 'X', conf: 85 },
-    'X111': { next: 'T', conf: 85 }, 'T665': { next: 'X', conf: 82 },
-    'X523': { next: 'X', conf: 80 }, 'X116': { next: 'X', conf: 78 },
-    'X141': { next: 'X', conf: 78 }, 'X252': { next: 'T', conf: 80 },
-    'T246': { next: 'T', conf: 82 }, 'T554': { next: 'T', conf: 82 },
-    'T256': { next: 'T', conf: 80 }, 'T166': { next: 'T', conf: 80 },
-    'T336': { next: 'T', conf: 78 }, 'T443': { next: 'X', conf: 78 },
-    'X412': { next: 'T', conf: 80 }, 'T543': { next: 'X', conf: 78 },
-    'X261': { next: 'T', conf: 80 }, 'T663': { next: 'T', conf: 82 },
-    'T515': { next: 'T', conf: 80 }, 'T156': { next: 'X', conf: 78 },
-    'X334': { next: 'T', conf: 80 }, 'T633': { next: 'X', conf: 78 },
-    'X541': { next: 'X', conf: 78 }, 'X414': { next: 'T', conf: 80 },
-    'T434': { next: 'X', conf: 78 }, 'X145': { next: 'X', conf: 78 },
-    'X431': { next: 'T', conf: 80 }, 'X432': { next: 'T', conf: 80 },
-    'T454': { next: 'T', conf: 82 }, 'X142': { next: 'T', conf: 80 },
-    'T645': { next: 'X', conf: 78 }, 'X243': { next: 'T', conf: 80 },
-    'T664': { next: 'X', conf: 78 }, 'X213': { next: 'T', conf: 80 },
-    'T363': { next: 'X', conf: 78 }, 'X226': { next: 'X', conf: 78 },
-    'X112': { next: 'T', conf: 80 }, 'T436': { next: 'T', conf: 80 },
-    'T551': { next: 'X', conf: 78 }, 'X341': { next: 'T', conf: 80 },
-    'T635': { next: 'T', conf: 82 }, 'T661': { next: 'T', conf: 80 },
-    'T362': { next: 'T', conf: 80 }, 'T466': { next: 'T', conf: 80 },
-    'T364': { next: 'X', conf: 78 }, 'X611': { next: 'T', conf: 80 },
-    'T462': { next: 'X', conf: 78 }, 'X126': { next: 'T', conf: 80 },
-    'X322': { next: 'T', conf: 80 }, 'X124': { next: 'X', conf: 78 },
-    'X315': { next: 'T', conf: 80 }, 'T236': { next: 'X', conf: 78 },
-    'X433': { next: 'T', conf: 80 }, 'T544': { next: 'X', conf: 78 },
-    'X121': { next: 'X', conf: 78 }, 'X153': { next: 'X', conf: 78 },
-    'X135': { next: 'X', conf: 78 }, 'X232': { next: 'X', conf: 78 },
-    'X621': { next: 'T', conf: 80 }, 'T542': { next: 'X', conf: 78 },
-    'X215': { next: 'X', conf: 78 }, 'X521': { next: 'X', conf: 78 },
-    'T344': { next: 'T', conf: 82 }, 'T334': { next: 'T', conf: 82 },
-    'T662': { next: 'T', conf: 80 }, 'T366': { next: 'T', conf: 80 }
+let predictionHistory = { b52: [] };
+const MAX_HISTORY = 100;
+const AUTO_SAVE_INTERVAL = 5000;
+let lastProcessedPhien = { b52: null };
+
+let learningData = {
+  b52: {
+    predictions: [],
+    patternStats: {},
+    totalPredictions: 0,
+    correctPredictions: 0,
+    patternWeights: {},
+    lastUpdate: null,
+    streakAnalysis: { wins: 0, losses: 0, currentStreak: 0, bestStreak: 0, worstStreak: 0 },
+    adaptiveThresholds: {},
+    recentAccuracy: [],
+    reversalState: { active: false, activatedAt: null, consecutiveLosses: 0, reversalCount: 0, lastReversalResult: null },
+    transitionMatrix: { 'Tài->Tài': 0, 'Tài->Xỉu': 0, 'Xỉu->Tài': 0, 'Xỉu->Xỉu': 0 }
+  }
 };
 
-// ============================================================================
-// 42 SUB MODELS + 21 MINI MODELS
-// ============================================================================
-class AdvancedPredictor {
-    constructor() {
-        this.subModels = {};
-        this.miniModels = {};
-        this.subModelWeights = {};
-        this.miniModelWeights = {};
-        this.modelWeights = { model1: 1.0, model2: 1.0, model3: 1.0, model4: 1.0, model11: 1.0 };
-        this.patternLibrary = {};
-        
-        this.initSubModels();
-        this.initMiniModels();
-    }
+const DEFAULT_PATTERN_WEIGHTS = {
+  'cau_bet': 1.3, 'cau_dao_11': 1.2, 'cau_22': 1.15, 'cau_33': 1.2, 'cau_121': 1.1,
+  'cau_123': 1.1, 'cau_321': 1.1, 'cau_nhay_coc': 1.0, 'cau_nhip_nghieng': 1.15,
+  'cau_3van1': 1.2, 'cau_be_cau': 1.25, 'cau_chu_ky': 1.1, 'distribution': 0.9,
+  'dice_pattern': 1.0, 'sum_trend': 1.05, 'edge_cases': 1.1, 'momentum': 1.15,
+  'cau_tu_nhien': 0.8, 'dice_trend_line': 1.2, 'break_pattern': 1.3, 'fibonacci': 1.0,
+  'resistance_support': 1.15, 'wave': 1.1, 'golden_ratio': 1.0, 'day_gay': 1.25,
+  'cau_44': 1.2, 'cau_55': 1.25, 'cau_212': 1.1, 'cau_1221': 1.15, 'cau_2112': 1.15,
+  'cau_gap': 1.1, 'cau_ziczac': 1.2, 'cau_doi': 1.15, 'cau_rong': 1.3,
+  'smart_bet': 1.2, 'markov_chain': 1.35, 'moving_avg_drift': 1.2, 'sum_pressure': 1.25,
+  'volatility': 1.15, 'sun_hot_cold': 1.3, 'sun_streak_break': 1.35, 'sun_balance': 1.2,
+  'sun_momentum_shift': 1.25
+};
 
-    initSubModels() {
-        const specialties = {
-            1: { name: '1-1 thuan', type: '1-1', logic: 'pure', minLength: 4, threshold: 0.9 },
-            2: { name: '1-1 bien the', type: '1-1', logic: 'variant', minLength: 5, threshold: 0.8 },
-            3: { name: '1-1 dai han', type: '1-1', logic: 'long', minLength: 8, threshold: 0.75 },
-            4: { name: '1-1 ket hop', type: '1-1', logic: 'hybrid', minLength: 6, threshold: 0.7 },
-            5: { name: '1-1 gay', type: '1-1', logic: 'break', minLength: 6, threshold: 0.8 },
-            6: { name: '1-1 phuc hoi', type: '1-1', logic: 'recovery', minLength: 7, threshold: 0.7 },
-            7: { name: '2-2 chuan', type: '2-2', logic: 'pure', minLength: 6, threshold: 0.9 },
-            8: { name: '2-2 lech', type: '2-2', logic: 'offset', minLength: 7, threshold: 0.8 },
-            9: { name: '2-2 bien tuong', type: '2-2', logic: 'variant', minLength: 8, threshold: 0.75 },
-            10: { name: '2-2 ket hop 1-1', type: '2-2', logic: 'hybrid', minLength: 8, threshold: 0.7 },
-            11: { name: '2-2 dai', type: '2-2', logic: 'long', minLength: 10, threshold: 0.8 },
-            12: { name: '2-2 be', type: '2-2', logic: 'break', minLength: 7, threshold: 0.85 },
-            13: { name: 'bet ngan', type: 'bet', logic: 'short', minLength: 3, threshold: 0.8 },
-            14: { name: 'bet trung', type: 'bet', logic: 'medium', minLength: 5, threshold: 0.85 },
-            15: { name: 'bet dai', type: 'bet', logic: 'long', minLength: 7, threshold: 0.9 },
-            16: { name: 'bet gay', type: 'bet', logic: 'break', minLength: 5, threshold: 0.8 },
-            17: { name: 'bet xen ke', type: 'bet', logic: 'hybrid', minLength: 6, threshold: 0.7 },
-            18: { name: 'sieu bet', type: 'bet', logic: 'super', minLength: 10, threshold: 0.95 },
-            19: { name: '3-3 chuan', type: '3-3', logic: 'pure', minLength: 9, threshold: 0.9 },
-            20: { name: '3-3 bien the', type: '3-3', logic: 'variant', minLength: 10, threshold: 0.8 },
-            21: { name: '3-3 ngan', type: '3-3', logic: 'short', minLength: 6, threshold: 0.7 },
-            22: { name: '3-3 ket hop', type: '3-3', logic: 'hybrid', minLength: 9, threshold: 0.75 },
-            23: { name: '3-3 be', type: '3-3', logic: 'break', minLength: 8, threshold: 0.8 },
-            24: { name: '3-3 dai', type: '3-3', logic: 'long', minLength: 12, threshold: 0.85 },
-            25: { name: '2-1-2 chuan', type: '2-1-2', logic: 'pure', minLength: 5, threshold: 0.9 },
-            26: { name: '2-1-2 bien the', type: '2-1-2', logic: 'variant', minLength: 6, threshold: 0.8 },
-            27: { name: '2-1-2 dai', type: '2-1-2', logic: 'long', minLength: 8, threshold: 0.8 },
-            28: { name: '1-2-1 chuan', type: '1-2-1', logic: 'pure', minLength: 5, threshold: 0.9 },
-            29: { name: '1-2-1 bien the', type: '1-2-1', logic: 'variant', minLength: 6, threshold: 0.8 },
-            30: { name: '1-2-1 dai', type: '1-2-1', logic: 'long', minLength: 8, threshold: 0.8 },
-            31: { name: 'be cau 1-1', type: 'break', logic: 'break11', minLength: 4, threshold: 0.85 },
-            32: { name: 'be cau 2-2', type: 'break', logic: 'break22', minLength: 5, threshold: 0.85 },
-            33: { name: 'be cau bet', type: 'break', logic: 'breakStreak', minLength: 4, threshold: 0.8 },
-            34: { name: 'chuyen 1-1 sang 2-2', type: 'transition', logic: '11to22', minLength: 6, threshold: 0.75 },
-            35: { name: 'chuyen 2-2 sang 1-1', type: 'transition', logic: '22to11', minLength: 6, threshold: 0.75 },
-            36: { name: 'chuyen bet sang 1-1', type: 'transition', logic: 'streakTo11', minLength: 5, threshold: 0.7 },
-            37: { name: 'phan tich tan suat', type: 'frequency', logic: 'frequency', minLength: 10, threshold: 0.7 },
-            38: { name: 'phan tich chu ky', type: 'cycle', logic: 'cycle', minLength: 12, threshold: 0.7 },
-            39: { name: 'phan tich doi xung', type: 'symmetry', logic: 'symmetry', minLength: 8, threshold: 0.75 },
-            40: { name: 'phan tich Fibonacci', type: 'fibonacci', logic: 'fibonacci', minLength: 8, threshold: 0.7 },
-            41: { name: 'phan tich xu huong dai', type: 'trend', logic: 'longTrend', minLength: 15, threshold: 0.8 },
-            42: { name: 'tong hop sieu cau', type: 'super', logic: 'super', minLength: 20, threshold: 0.85 }
-        };
+const REVERSAL_THRESHOLD = 3;
 
-        for (var i = 1; i <= 42; i++) {
-            this.subModels['sub_model_' + i] = {
-                name: specialties[i].name,
-                type: specialties[i].type,
-                logic: specialties[i].logic,
-                minLength: specialties[i].minLength,
-                threshold: specialties[i].threshold,
-                weight: 1.0,
-                accuracy: 0.5,
-                predictions: []
-            };
-            this.subModelWeights['sub_model_' + i] = 1.0;
-        }
-    }
-
-    initMiniModels() {
-        var specs = {
-            1: 'phat_hien_cau_dep', 2: 'du_doan_bien_dong', 3: 'phan_tich_so_sanh',
-            4: 'nhan_dien_xu_huong_cuc_bo', 5: 'tinh_toan_xac_suat_cao', 6: 'phat_hien_diem_gay',
-            7: 'du_doan_nguong', 8: 'phan_tich_chuoi', 9: 'nhan_dien_mau_lap',
-            10: 'tinh_he_so_tuong_quan', 11: 'du_doan_doan_nhiet', 12: 'phan_tich_pha',
-            13: 'nhan_dien_song', 14: 'tinh_toan_momentum', 15: 'du_doan_hoi_phuc',
-            16: 'phat_hien_dot_bien', 17: 'phan_tich_can_bang', 18: 'nhan_dien_tan_so',
-            19: 'du_doan_chu_ky', 20: 'tinh_toan_ma_tran', 21: 'phan_tich_tong_hop'
-        };
-
-        for (var i = 1; i <= 21; i++) {
-            this.miniModels['mini_model_' + i] = {
-                weight: 1.0,
-                accuracy: 0.5,
-                specialty: specs[i] || 'chung',
-                predictions: []
-            };
-            this.miniModelWeights['mini_model_' + i] = 1.0;
-        }
-    }
-
-    getResultArray(history) {
-        var results = [];
-        for (var i = 0; i < history.length; i++) {
-            results.push(history[i].kq === 'T' ? 'Tai' : 'Xiu');
-        }
-        return results;
-    }
-
-    getStreak(results) {
-        if (results.length === 0) return 0;
-        var last = results[results.length - 1];
-        var streak = 1;
-        for (var i = results.length - 2; i >= 0; i--) {
-            if (results[i] === last) streak++;
-            else break;
-        }
-        return streak;
-    }
-
-    isPerfectAlternating(results, length) {
-        var last = results.slice(-length);
-        for (var i = 0; i < last.length - 1; i++) {
-            if (last[i] === last[i+1]) return false;
-        }
-        return true;
-    }
-
-    analyzeFrequency(results) {
-        var recent = results.slice(-20);
-        var taiCount = 0;
-        for (var i = 0; i < recent.length; i++) if (recent[i] === 'Tai') taiCount++;
-        var ratio = Math.max(taiCount, recent.length - taiCount) / recent.length;
-        return { dominant: taiCount > recent.length - taiCount ? 'Tai' : 'Xiu', ratio: ratio };
-    }
-
-    detectCycle(results) {
-        for (var cycleLen = 2; cycleLen <= 4; cycleLen++) {
-            if (results.length < cycleLen * 2) continue;
-            var lastCycle = results.slice(-cycleLen);
-            var prevCycle = results.slice(-cycleLen*2, -cycleLen);
-            var match = true;
-            for (var i = 0; i < cycleLen; i++) {
-                if (lastCycle[i] !== prevCycle[i]) { match = false; break; }
-            }
-            if (match) return { found: true, length: cycleLen, next: lastCycle[0] };
-        }
-        return { found: false };
-    }
-
-    getLongTrend(results) {
-        if (results.length < 10) return { strength: 0, direction: null };
-        var firstTai = 0, lastTai = 0;
-        for (var i = 0; i < 5; i++) if (results[i] === 'Tai') firstTai++;
-        for (var j = results.length - 5; j < results.length; j++) if (results[j] === 'Tai') lastTai++;
-        if (lastTai > firstTai + 2) return { strength: 0.8, direction: 'Tai' };
-        if (lastTai < firstTai - 2) return { strength: 0.8, direction: 'Xiu' };
-        return { strength: 0.5, direction: lastTai > 2 ? 'Tai' : 'Xiu' };
-    }
-
-    runSubModel(index, history) {
-        if (history.length < 3) return null;
-        var results = this.getResultArray(history);
-        var model = this.subModels['sub_model_' + index];
-        if (!model) return null;
-
-        var last = results[results.length - 1];
-        var other = last === 'Tai' ? 'Xiu' : 'Tai';
-        var streak = this.getStreak(results);
-
-        // Xu ly theo type
-        switch (model.type) {
-            case '1-1':
-                if (results.length >= model.minLength) {
-                    if (model.logic === 'pure' && this.isPerfectAlternating(results, 4)) {
-                        return { prediction: other, confidence: 0.9, reason: 'Cau 1-1 thuan tuy', model_name: model.name };
-                    }
-                    if ((model.logic === 'variant' || model.logic === 'long') && results.length >= 6) {
-                        var altCount = 0;
-                        for (var i = 1; i < Math.min(results.length, 12); i++) {
-                            if (results[results.length - i] !== results[results.length - i - 1]) altCount++;
-                        }
-                        if (altCount >= results.length * 0.6) {
-                            return { prediction: other, confidence: 0.7 + (altCount/20), reason: 'Cau 1-1 dai han', model_name: model.name };
-                        }
-                    }
-                    if (model.logic === 'break' && streak >= 4) {
-                        return { prediction: last, confidence: 0.8, reason: '1-1 sap gay', model_name: model.name };
-                    }
-                }
-                break;
-
-            case '2-2':
-                if (results.length >= 6) {
-                    var last6 = results.slice(-6);
-                    if (last6[0] === last6[1] && last6[2] === last6[3] && last6[4] === last6[5] && last6[1] !== last6[2]) {
-                        return { prediction: last6[4] === 'Tai' ? 'Xiu' : 'Tai', confidence: 0.9, reason: 'Cau 2-2 chuan', model_name: model.name };
-                    }
-                }
-                break;
-
-            case 'bet':
-                if (streak >= model.minLength) {
-                    if (model.logic === 'break' && streak >= 4) {
-                        return { prediction: other, confidence: 0.7 + (streak*0.03), reason: 'Bet ' + streak + ' phien, sap gay', model_name: model.name };
-                    }
-                    return { prediction: last, confidence: 0.7 + (streak*0.03), reason: 'Bet ' + streak + ' phien', model_name: model.name };
-                }
-                break;
-
-            case '3-3':
-                if (results.length >= 9) {
-                    var last9 = results.slice(-9);
-                    if (last9[0]===last9[1]&&last9[1]===last9[2]&&last9[3]===last9[4]&&last9[4]===last9[5]&&last9[6]===last9[7]&&last9[7]===last9[8]) {
-                        return { prediction: last9[6]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 3-3 chuan', model_name: model.name };
-                    }
-                }
-                break;
-
-            case '2-1-2':
-                if (results.length >= 5) {
-                    var last5 = results.slice(-5);
-                    if (last5[0]===last5[1]&&last5[1]!==last5[2]&&last5[2]!==last5[3]&&last5[3]===last5[4]) {
-                        return { prediction: last5[4]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 2-1-2', model_name: model.name };
-                    }
-                }
-                break;
-
-            case '1-2-1':
-                if (results.length >= 5) {
-                    var last5b = results.slice(-5);
-                    if (last5b[0]!==last5b[1]&&last5b[1]===last5b[2]&&last5b[2]!==last5b[3]&&last5b[3]===last5b[4]) {
-                        return { prediction: last5b[4]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 1-2-1', model_name: model.name };
-                    }
-                }
-                break;
-
-            case 'break':
-                if (results.length >= 4) {
-                    var last4 = results.slice(-4);
-                    if (last4[0]!==last4[1]&&last4[1]!==last4[2]&&last4[2]===last4[3]) {
-                        return { prediction: last4[3], confidence: 0.85, reason: 'Be cau 1-1', model_name: model.name };
-                    }
-                    if (streak >= 3 && last !== results[results.length-2]) {
-                        return { prediction: last, confidence: 0.8, reason: 'Be cau bet', model_name: model.name };
-                    }
-                }
-                break;
-
-            case 'transition':
-                if (results.length >= 6) {
-                    var last6c = results.slice(-6);
-                    if (last6c[0]!==last6c[1]&&last6c[1]!==last6c[2]&&last6c[2]===last6c[3]&&last6c[3]!==last6c[4]&&last6c[4]===last6c[5]) {
-                        return { prediction: last6c[4]==='Tai'?'Xiu':'Tai', confidence: 0.75, reason: 'Chuyen 1-1 sang 2-2', model_name: model.name };
-                    }
-                }
-                break;
-
-            case 'frequency':
-                var freq = this.analyzeFrequency(results);
-                if (freq.ratio > 0.6) {
-                    return { prediction: freq.dominant, confidence: 0.6+freq.ratio*0.2, reason: 'Tan suat ' + freq.dominant, model_name: model.name };
-                }
-                break;
-
-            case 'cycle':
-                var cycle = this.detectCycle(results);
-                if (cycle.found) {
-                    return { prediction: cycle.next, confidence: 0.7, reason: 'Chu ky ' + cycle.length, model_name: model.name };
-                }
-                break;
-
-            case 'trend':
-                var trend = this.getLongTrend(results);
-                if (trend.strength > 0.7) {
-                    return { prediction: trend.direction, confidence: 0.7+trend.strength*0.1, reason: 'Xu huong dai', model_name: model.name };
-                }
-                break;
-        }
-
-        return null;
-    }
-
-    ensembleModels(history) {
-        var allResults = [];
-        var details = [];
-
-        // Chay sub models 1-42
-        for (var i = 1; i <= 42; i++) {
-            var result = this.runSubModel(i, history);
-            if (result && result.prediction) {
-                allResults.push(result);
-                details.push({
-                    model: result.model_name || ('sub_model_' + i),
-                    prediction: result.prediction === 'Tai' ? 'TAI' : 'XIU',
-                    confidence: result.confidence,
-                    reason: result.reason
-                });
-            }
-        }
-
-        // Chay mini models 1-21
-        for (var j = 1; j <= 21; j++) {
-            var miniResult = this.runMiniModel(j, history);
-            if (miniResult && miniResult.prediction) {
-                allResults.push(miniResult);
-                details.push({
-                    model: 'mini_model_' + j,
-                    prediction: miniResult.prediction === 'Tai' ? 'TAI' : 'XIU',
-                    confidence: miniResult.confidence,
-                    reason: miniResult.reason
-                });
-            }
-        }
-
-        // Tinh weighted vote
-        var taiWeight = 0, xiuWeight = 0, totalWeight = 0;
-        for (var k = 0; k < allResults.length; k++) {
-            var r = allResults[k];
-            var w = r.confidence || 0.5;
-            if (r.prediction === 'Tai' || r.prediction === 'TAI') taiWeight += w;
-            else if (r.prediction === 'Xiu' || r.prediction === 'XIU') xiuWeight += w;
-            totalWeight += w;
-        }
-
-        details.sort(function(a, b) { return b.confidence - a.confidence; });
-
-        var finalPred, finalConf;
-        if (totalWeight > 0) {
-            if (taiWeight > xiuWeight * 1.3) {
-                finalPred = 'TAI';
-                finalConf = Math.min((taiWeight/totalWeight)*100, 95);
-            } else if (xiuWeight > taiWeight * 1.3) {
-                finalPred = 'XIU';
-                finalConf = Math.min((xiuWeight/totalWeight)*100, 95);
-            } else if (details.length > 0) {
-                finalPred = details[0].prediction;
-                finalConf = 50 + details[0].confidence * 30;
-            } else {
-                finalPred = 'TAI';
-                finalConf = 50;
-            }
-        } else {
-            finalPred = 'TAI';
-            finalConf = 50;
-        }
-
-        return {
-            duDoan: finalPred,
-            kyHieu: finalPred === 'TAI' ? 'T' : 'X',
-            doTinCay: Math.round(finalConf),
-            tiLe: Math.round(finalConf) + '%',
-            cau: details.length > 0 ? details[0].reason : 'Khong xac dinh',
-            loai: details.length > 0 ? details[0].model : 'KHONG CO',
-            sucManh: finalConf >= 90 ? 'RAT MANH' : finalConf >= 75 ? 'MANH' : 'VUA',
-            loiKhuyen: finalConf >= 90 ? 'VAO TIEN MANH' : finalConf >= 75 ? 'VAO TIEN' : 'THAM DO',
-            tatCa: details.slice(0, 10),
-            diemManh: Math.round(finalConf),
-            tongModels: allResults.length
-        };
-    }
-
-    runMiniModel(index, history) {
-        if (history.length < 2) return null;
-        var results = this.getResultArray(history);
-        var last = results[results.length - 1];
-        var other = last === 'Tai' ? 'Xiu' : 'Tai';
-        var streak = this.getStreak(results);
-
-        var predictions = [
-            { pred: last, conf: 0.5, reason: 'Theo xu huong' },
-            { pred: other, conf: 0.48, reason: 'Dao chieu' },
-            { pred: streak >= 3 ? last : other, conf: 0.55, reason: 'Theo bet' },
-            { pred: other, conf: 0.52, reason: 'Can bang' },
-            { pred: last, conf: 0.5, reason: 'Tiep tuc' }
-        ];
-
-        var pick = predictions[index % predictions.length];
-        return {
-            prediction: pick.pred,
-            confidence: pick.conf,
-            reason: 'Mini ' + index + ': ' + pick.reason,
-            model_name: 'mini_model_' + index
-        };
-    }
+function loadLearningData() {
+  try { if (fs.existsSync(LEARNING_FILE)) { const d = JSON.parse(fs.readFileSync(LEARNING_FILE, 'utf8')); if (d.b52) learningData = { ...learningData, ...d }; } } catch(e) {}
 }
 
-var predictor = new AdvancedPredictor();
-
-// ============================================================================
-// MAIN ANALYZE
-// ============================================================================
-function phanTich(history) {
-    var len = history.length;
-    if (len < 2) {
-        return {
-            duDoan: 'TAI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
-            cau: 'Dang thu thap du lieu', loai: 'KHONG CO', sucManh: 'YEU',
-            loiKhuyen: 'DOI THEM DU LIEU', tatCa: [], diemManh: 0
-        };
-    }
-
-    // Chay ensemble 42+21 models
-    var result = predictor.ensembleModels(history);
-    return result;
+function saveLearningData() {
+  try { fs.writeFileSync(LEARNING_FILE, JSON.stringify(learningData, null, 2)); } catch(e) {}
 }
 
-function checkDD(phien, kq) {
-    for (var i = 0; i < predictionLog.length; i++) {
-        if (predictionLog[i].phienDD === phien && predictionLog[i].kqThuc === null) {
-            predictionLog[i].kqThuc = kq;
-            predictionLog[i].dung = predictionLog[i].duDoan === kq;
-            break;
-        }
-    }
+function loadPredictionHistory() {
+  try { if (fs.existsSync(HISTORY_FILE)) { const d = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')); if (d.history?.b52) predictionHistory = d.history; if (d.lastProcessedPhien?.b52) lastProcessedPhien = d.lastProcessedPhien; } } catch(e) {}
 }
 
-// ============================================================================
-// ROUTES
-// ============================================================================
-app.get('/', function(req, res) {
-    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI Pro - 63 Models</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:700px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:8px 0;background:linear-gradient(45deg,#f6d365,#fda085);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.box{padding:10px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:2em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:12px 24px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:1em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BET{background:#da3633}.tag.DAO{background:#1f6feb}.tag.NHIP{background:#8957e5}.tag.HOI{background:#d2991d;color:#000}.tag.NGHIENG{background:#3fb950;color:#000}.tag.SONG{background:#db6d28}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:.75em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI PRO - 63 MODELS</h1><p style="text-align:center;color:#8b949e;font-size:.8em">42 SUB MODELS + 21 MINI MODELS</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DU DOAN</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 SU</a></div><div id="out"><div class="loading">⏳ Dang tai...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ 63 Models dang phan tich...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.phien_truoc||{};var dd=d.du_doan||{};var cau=d.cau_phat_hien||[];var html="";html+=\'<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center;color:#f6d365>📌 DU DOAN PHIEN HIEN TAI</h3><div style=text-align:center;margin:10px 0><span>PHIEN HIEN TAI: </span><span class="big yellow">#\'+dd.phien_hien_tai+\'</span></div><div class=grid2><div class="box \'+(dd.ky_hieu=="T"?"TAI":"XIU")+\'"><small>DU DOAN</small><div class=big style=font-size:2.5em;color:\'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+dd.du_doan+\'</div></div><div class=box><small>TI LE THANG</small><div class="big yellow">\'+dd.ti_le+\'</div></div></div><p style=margin-top:8px>📊 <b>\'+dd.cau+\'</b> | 💡 <b>\'+dd.loi_khuyen+\'</b></p><p>🧠 <b>\'+dd.tong_models+\'</b> models dong thuan</p></div>\';html+=\'<div class=card><h3>📍 PHIEN TRUOC</h3><div class=grid2><div class=box><small>PHIEN</small><div class=big>#\'+p.phien+\'</div></div><div class="box \'+(p.ky_hieu=="T"?"TAI":"XIU")+\'"><small>KET QUA</small><div class=big style=color:\'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+p.ket_qua+\'</div><small>Tong: \'+p.tong+\' | Xuc xac: \'+(p.xuc_xac||[]).join(", ")+\'</small></div></div></div>\';if(cau.length>0){html+=\'<div class=card><h3>🔍 TOP 10 MODELS</h3>\';for(var i=0;i<cau.length;i++){var c=cau[i];html+=\'<p style=margin:3px 0;font-size:.75em;padding:3px;background:rgba(255,255,255,0.02);border-radius:3px">\'+(i+1)+\'. <b>\'+c.model+\'</b> → <b style=color:\'+(c.prediction=="TAI"?"#f85149":"#3fb950")+\'>\'+c.prediction+\'</b> (\'+(c.confidence*100).toFixed(0)+\'%)</p>\'}html+=\'</div>\'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML=\'<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LOI</h3><p>\'+e.message+\'</p><button class=btn onclick=load()>🔄 THU LAI</button></div>\'}}load();setInterval(load,25000);</script></body></html>');
+function savePredictionHistory() {
+  try { fs.writeFileSync(HISTORY_FILE, JSON.stringify({ history: predictionHistory, lastProcessedPhien, lastSaved: new Date().toISOString() }, null, 2)); } catch(e) {}
+}
+
+async function fetchData() {
+  try {
+    const response = await axios.get(API_URL, { timeout: 10000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const rawData = response.data;
+    if (rawData && rawData.phien) {
+      const currentPhien = { Phien: parseInt(rawData.phien), Ket_qua: parseInt(rawData.tong) >= 11 ? 'Tài' : 'Xỉu', xuc_xac_1: rawData.xuc_xac_1, xuc_xac_2: rawData.xuc_xac_2, xuc_xac_3: rawData.xuc_xac_3, tong: parseInt(rawData.tong) || 0 };
+      return { data: [currentPhien] };
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+function normalizeResult(result) {
+  if (result === 'Tài' || result === 'tai' || result === 'T') return 'tai';
+  return 'xiu';
+}
+
+function getPatternIdFromName(name) {
+  const mapping = { 'Cầu Bệt': 'cau_bet', 'Cầu Đảo 1-1': 'cau_dao_11', 'Cầu 2-2': 'cau_22', 'Cầu 3-3': 'cau_33', 'Cầu 1-2-1': 'cau_121', 'Cầu 1-2-3': 'cau_123', 'Cầu 3-2-1': 'cau_321', 'Cầu Nhảy Cóc': 'cau_nhay_coc', 'Cầu Nhịp Nghiêng': 'cau_nhip_nghieng', 'Cầu 3 Ván 1': 'cau_3van1', 'Cầu Bẻ Cầu': 'cau_be_cau', 'Cầu Chu Kỳ': 'cau_chu_ky', 'Cầu Rồng': 'cau_rong', 'Đảo Xu Hướng': 'smart_bet', 'Cầu Tự Nhiên': 'cau_tu_nhien', 'Biểu Đồ Đường': 'dice_trend_line', 'Cầu Liên Tục': 'break_pattern', 'Dây Gãy': 'day_gay' };
+  for (const [k, v] of Object.entries(mapping)) { if (name.includes(k)) return v; }
+  return null;
+}
+
+function initializePatternStats(type) {
+  if (!learningData[type].patternWeights || Object.keys(learningData[type].patternWeights).length === 0) learningData[type].patternWeights = { ...DEFAULT_PATTERN_WEIGHTS };
+  Object.keys(DEFAULT_PATTERN_WEIGHTS).forEach(p => { if (!learningData[type].patternStats[p]) learningData[type].patternStats[p] = { total: 0, correct: 0, accuracy: 0.5, recentResults: [], lastAdjustment: null }; });
+}
+
+function getPatternWeight(type, patternId) { initializePatternStats(type); return learningData[type].patternWeights[patternId] || 1.0; }
+
+function updatePatternPerformance(type, patternId, isCorrect) {
+  initializePatternStats(type);
+  const stats = learningData[type].patternStats[patternId];
+  if (!stats) return;
+  stats.total++; if (isCorrect) stats.correct++;
+  stats.recentResults.push(isCorrect ? 1 : 0); if (stats.recentResults.length > 20) stats.recentResults.shift();
+  const recentAccuracy = stats.recentResults.reduce((a, b) => a + b, 0) / stats.recentResults.length;
+  stats.accuracy = stats.total > 0 ? stats.correct / stats.total : 0.5;
+  const oldWeight = learningData[type].patternWeights[patternId];
+  let newWeight = oldWeight;
+  if (stats.recentResults.length >= 5) { if (recentAccuracy > 0.6) newWeight = Math.min(2.0, oldWeight * 1.05); else if (recentAccuracy < 0.4) newWeight = Math.max(0.3, oldWeight * 0.95); }
+  learningData[type].patternWeights[patternId] = newWeight;
+  stats.lastAdjustment = new Date().toISOString();
+}
+
+function recordPrediction(type, phien, prediction, confidence, patterns) {
+  learningData[type].predictions.unshift({ phien: phien.toString(), prediction, confidence, patterns, timestamp: new Date().toISOString(), verified: false, actual: null, isCorrect: null });
+  learningData[type].totalPredictions++;
+  if (learningData[type].predictions.length > 500) learningData[type].predictions = learningData[type].predictions.slice(0, 500);
+  saveLearningData();
+}
+
+async function verifyPredictions(type, currentData) {
+  let updated = false;
+  for (const pred of learningData[type].predictions) {
+    if (pred.verified) continue;
+    const actualResult = currentData.find(d => d.Phien.toString() === pred.phien);
+    if (actualResult) {
+      pred.verified = true; pred.actual = actualResult.Ket_qua;
+      const predictedNormalized = pred.prediction === 'Tài' || pred.prediction === 'tai' ? 'Tài' : 'Xỉu';
+      pred.isCorrect = pred.actual === predictedNormalized;
+      if (pred.isCorrect) { learningData[type].correctPredictions++; learningData[type].streakAnalysis.wins++; if (learningData[type].streakAnalysis.currentStreak >= 0) learningData[type].streakAnalysis.currentStreak++; else learningData[type].streakAnalysis.currentStreak = 1; if (learningData[type].streakAnalysis.currentStreak > learningData[type].streakAnalysis.bestStreak) learningData[type].streakAnalysis.bestStreak = learningData[type].streakAnalysis.currentStreak; }
+      else { learningData[type].streakAnalysis.losses++; if (learningData[type].streakAnalysis.currentStreak <= 0) learningData[type].streakAnalysis.currentStreak--; else learningData[type].streakAnalysis.currentStreak = -1; if (learningData[type].streakAnalysis.currentStreak < learningData[type].streakAnalysis.worstStreak) learningData[type].streakAnalysis.worstStreak = learningData[type].streakAnalysis.currentStreak; }
+      learningData[type].recentAccuracy.push(pred.isCorrect ? 1 : 0); if (learningData[type].recentAccuracy.length > 50) learningData[type].recentAccuracy.shift();
+      if (pred.patterns?.length > 0) pred.patterns.forEach(p => { const pid = getPatternIdFromName(p); if (pid) updatePatternPerformance(type, pid, pred.isCorrect); });
+      updated = true;
+    }
+  }
+  if (updated) { learningData[type].lastUpdate = new Date().toISOString(); saveLearningData(); }
+}
+
+function getAdaptiveConfidenceBoost(type) {
+  const recentAcc = learningData[type].recentAccuracy;
+  if (recentAcc.length < 10) return 0;
+  const accuracy = recentAcc.reduce((a, b) => a + b, 0) / recentAcc.length;
+  if (accuracy > 0.65) return 5; if (accuracy > 0.55) return 2;
+  if (accuracy < 0.4) return -5; if (accuracy < 0.45) return -2;
+  return 0;
+}
+
+function getSmartPredictionAdjustment(type, prediction, patterns) {
+  if (learningData[type].streakAnalysis.currentStreak <= -5) return prediction === 'Tài' ? 'Xỉu' : 'Tài';
+  return prediction;
+}
+
+function applyAutoReversal(type, prediction) {
+  const rs = learningData[type].reversalState;
+  if (learningData[type].streakAnalysis.currentStreak <= -REVERSAL_THRESHOLD && !rs.active) { rs.active = true; rs.activatedAt = new Date().toISOString(); rs.reversalCount++; }
+  if (rs.active) { return { prediction: prediction === 'Tài' ? 'Xỉu' : 'Tài', reversed: true, originalPrediction: prediction }; }
+  return { prediction, reversed: false };
+}
+
+function updateReversalState(type, isCorrect) {
+  const rs = learningData[type].reversalState;
+  if (isCorrect && rs.active) { rs.active = false; rs.lastReversalResult = 'success'; rs.consecutiveLosses = 0; }
+  if (!isCorrect) rs.consecutiveLosses++; else rs.consecutiveLosses = 0;
+}
+
+function analyzeBet(results, type) {
+  if (results.length < 3) return { detected: false };
+  let streakType = results[0], streakLength = 1;
+  for (let i = 1; i < results.length; i++) { if (results[i] === streakType) streakLength++; else break; }
+  if (streakLength >= 3) {
+    const weight = getPatternWeight(type, 'cau_bet');
+    let shouldBreak = streakLength >= 6;
+    return { detected: true, prediction: shouldBreak ? (streakType === 'Tài' ? 'Xỉu' : 'Tài') : streakType, confidence: Math.round((shouldBreak ? Math.min(12, streakLength * 2) : Math.min(15, streakLength * 3)) * weight), name: `Cầu Bệt ${streakLength} phiên`, patternId: 'cau_bet' };
+  }
+  return { detected: false };
+}
+
+function analyzeDao11(results, type) {
+  if (results.length < 4) return { detected: false };
+  let altLen = 1;
+  for (let i = 1; i < Math.min(results.length, 10); i++) { if (results[i] !== results[i - 1]) altLen++; else break; }
+  if (altLen >= 4) {
+    const weight = getPatternWeight(type, 'cau_dao_11');
+    return { detected: true, prediction: results[0] === 'Tài' ? 'Xỉu' : 'Tài', confidence: Math.round(Math.min(14, altLen * 2 + 4) * weight), name: `Cầu Đảo 1-1 (${altLen} phiên)`, patternId: 'cau_dao_11' };
+  }
+  return { detected: false };
+}
+
+function analyze22(results, type) {
+  if (results.length < 6) return { detected: false };
+  let pairCount = 0, i = 0, pattern = [];
+  while (i < results.length - 1 && pairCount < 4) { if (results[i] === results[i + 1]) { pattern.push(results[i]); pairCount++; i += 2; } else break; }
+  if (pairCount >= 2 && pattern.every((v, idx, arr) => idx === 0 || v !== arr[idx - 1])) {
+    const weight = getPatternWeight(type, 'cau_22');
+    return { detected: true, prediction: pattern[pattern.length - 1] === 'Tài' ? 'Xỉu' : 'Tài', confidence: Math.round(Math.min(12, pairCount * 3 + 3) * weight), name: `Cầu 2-2 (${pairCount} cặp)`, patternId: 'cau_22' };
+  }
+  return { detected: false };
+}
+
+function analyze33(results, type) {
+  if (results.length < 6) return { detected: false };
+  let tripleCount = 0, i = 0, pattern = [];
+  while (i < results.length - 2) { if (results[i] === results[i + 1] && results[i + 1] === results[i + 2]) { pattern.push(results[i]); tripleCount++; i += 3; } else break; }
+  if (tripleCount >= 1) {
+    const weight = getPatternWeight(type, 'cau_33');
+    const pred = (results.length % 3 === 0) ? (pattern[pattern.length - 1] === 'Tài' ? 'Xỉu' : 'Tài') : pattern[pattern.length - 1];
+    return { detected: true, prediction: pred, confidence: Math.round(Math.min(13, tripleCount * 4 + 5) * weight), name: `Cầu 3-3`, patternId: 'cau_33' };
+  }
+  return { detected: false };
+}
+
+function analyze121(results, type) {
+  if (results.length < 4) return { detected: false };
+  const p = results.slice(0, 4);
+  if (p[0] !== p[1] && p[1] === p[2] && p[2] !== p[3] && p[0] === p[3]) {
+    const weight = getPatternWeight(type, 'cau_121');
+    return { detected: true, prediction: p[0], confidence: Math.round(10 * weight), name: 'Cầu 1-2-1', patternId: 'cau_121' };
+  }
+  return { detected: false };
+}
+
+function analyzeHoiCau(lastTong) {
+  if (lastTong >= 17) return { pred: 'X', conf: 93, name: 'HỒI CỰC ĐẠI' };
+  if (lastTong <= 4) return { pred: 'T', conf: 93, name: 'HỒI CỰC TIỂU' };
+  if (lastTong >= 15) return { pred: 'X', conf: 78, name: 'HỒI CAO' };
+  if (lastTong <= 5) return { pred: 'T', conf: 78, name: 'HỒI THẤP' };
+  return null;
+}
+
+function analyzeNghieng(history, type) {
+  const len = history.length;
+  if (len < 8) return { detected: false };
+  const str = history.map(h => h.kq).join('');
+  const tCount = history.filter(h => h.kq === 'T').length;
+  const tRate = tCount / len;
+  if (tRate >= 0.75 && str.endsWith('TT')) return { detected: true, prediction: 'Tài', confidence: 82, name: 'NGHIÊNG TÀI', patternId: 'cau_nhip_nghieng' };
+  if (tRate <= 0.25 && str.endsWith('XX')) return { detected: true, prediction: 'Xỉu', confidence: 82, name: 'NGHIÊNG XỈU', patternId: 'cau_nhip_nghieng' };
+  if (tRate >= 0.7) return { detected: true, prediction: 'Xỉu', confidence: 72, name: 'BẺ TÀI', patternId: 'cau_nhip_nghieng' };
+  if (tRate <= 0.3) return { detected: true, prediction: 'Tài', confidence: 72, name: 'BẺ XỈU', patternId: 'cau_nhip_nghieng' };
+  return { detected: false };
+}
+
+function calculateAdvancedPrediction(data, type) {
+  const last50 = data.slice(0, 50);
+  const results = last50.map(d => d.Ket_qua);
+  initializePatternStats(type);
+  
+  let predictions = [], factors = [], allPatterns = [];
+
+  const bet = analyzeBet(results, type); if (bet.detected) { predictions.push({ prediction: bet.prediction, confidence: bet.confidence, priority: 10, name: bet.name }); factors.push(bet.name); allPatterns.push(bet); }
+  const dao11 = analyzeDao11(results, type); if (dao11.detected) { predictions.push({ prediction: dao11.prediction, confidence: dao11.confidence, priority: 9, name: dao11.name }); factors.push(dao11.name); allPatterns.push(dao11); }
+  const c22 = analyze22(results, type); if (c22.detected) { predictions.push({ prediction: c22.prediction, confidence: c22.confidence, priority: 8, name: c22.name }); factors.push(c22.name); allPatterns.push(c22); }
+  const c33 = analyze33(results, type); if (c33.detected) { predictions.push({ prediction: c33.prediction, confidence: c33.confidence, priority: 8, name: c33.name }); factors.push(c33.name); allPatterns.push(c33); }
+  const c121 = analyze121(results, type); if (c121.detected) { predictions.push({ prediction: c121.prediction, confidence: c121.confidence, priority: 7, name: c121.name }); factors.push(c121.name); allPatterns.push(c121); }
+
+  const lastTong = data[0]?.tong || 10;
+  const hoi = analyzeHoiCau(lastTong);
+  if (hoi) { predictions.push({ prediction: hoi.pred === 'T' ? 'Tài' : 'Xỉu', confidence: hoi.conf, priority: 11, name: hoi.name }); factors.push(hoi.name); }
+
+  const nghieng = analyzeNghieng(results.map((r, i) => ({ kq: r === 'Tài' ? 'T' : 'X' })), type);
+  if (nghieng.detected) { predictions.push({ prediction: nghieng.prediction, confidence: nghieng.confidence, priority: 7, name: nghieng.name }); factors.push(nghieng.name); }
+
+  if (predictions.length === 0) {
+    const lastKQ = results[0];
+    predictions.push({ prediction: lastKQ === 'Tài' ? 'Xỉu' : 'Tài', confidence: 50, priority: 1, name: 'ĐÁNH NGƯỢC' });
+  }
+
+  predictions.sort((a, b) => b.priority - a.priority || b.confidence - a.confidence);
+  const taiVotes = predictions.filter(p => p.prediction === 'Tài');
+  const xiuVotes = predictions.filter(p => p.prediction === 'Xỉu');
+  const taiScore = taiVotes.reduce((s, p) => s + p.confidence * p.priority, 0);
+  const xiuScore = xiuVotes.reduce((s, p) => s + p.confidence * p.priority, 0);
+  
+  let finalPrediction = taiScore >= xiuScore ? 'Tài' : 'Xỉu';
+  finalPrediction = getSmartPredictionAdjustment(type, finalPrediction, allPatterns);
+  
+  let baseConfidence = 50;
+  predictions.slice(0, 3).forEach(p => { if (p.prediction === finalPrediction) baseConfidence += p.confidence; });
+  baseConfidence += Math.round((finalPrediction === 'Tài' ? taiVotes.length : xiuVotes.length) / predictions.length * 10);
+  baseConfidence += getAdaptiveConfidenceBoost(type);
+  let finalConfidence = Math.max(50, Math.min(85, Math.round(baseConfidence + (Math.random() * 4 - 2))));
+
+  const reversalResult = applyAutoReversal(type, finalPrediction);
+  return { prediction: reversalResult.prediction, confidence: finalConfidence, factors, allPatterns, reversed: reversalResult.reversed };
+}
+
+function savePredictionToHistory(type, phien, prediction, confidence) {
+  const record = { phien_hien_tai: phien.toString(), du_doan: normalizeResult(prediction), ti_le: `${confidence}%`, id: TELEGRAM_ID, timestamp: new Date().toISOString() };
+  predictionHistory[type].unshift(record);
+  if (predictionHistory[type].length > MAX_HISTORY) predictionHistory[type] = predictionHistory[type].slice(0, MAX_HISTORY);
+  return record;
+}
+
+async function autoProcessPredictions() {
+  try {
+    const data = await fetchData();
+    if (!data?.data?.length) return;
+    const latestPhien = data.data[0].Phien;
+    const nextPhien = latestPhien + 1;
+    if (lastProcessedPhien.b52 !== nextPhien) {
+      await verifyPredictions('b52', data.data);
+      const result = calculateAdvancedPrediction(data.data, 'b52');
+      savePredictionToHistory('b52', nextPhien, result.prediction, result.confidence);
+      recordPrediction('b52', nextPhien, result.prediction, result.confidence, result.factors);
+      lastProcessedPhien.b52 = nextPhien;
+      console.log(`[Auto] Sun phien ${nextPhien}: ${result.prediction} (${result.confidence}%)`);
+    }
+    savePredictionHistory(); saveLearningData();
+  } catch(e) { console.error('[Auto] Error:', e.message); }
+}
+
+function startAutoSaveTask() {
+  console.log(`Auto-save started (every ${AUTO_SAVE_INTERVAL/1000}s)`);
+  setTimeout(() => autoProcessPredictions(), 5000);
+  setInterval(() => autoProcessPredictions(), AUTO_SAVE_INTERVAL);
+}
+
+app.get('/', (req, res) => { res.send('t.me/CuTools - Sun Prediction API - ' + TELEGRAM_ID); });
+
+app.get('/api/predict', async (req, res) => {
+  try {
+    const data = await fetchData();
+    if (!data?.data?.length) return res.status(500).json({ error: 'Không thể lấy dữ liệu' });
+    await verifyPredictions('b52', data.data);
+    const sunData = data.data;
+    const latestPhien = sunData[0].Phien;
+    const nextPhien = latestPhien + 1;
+    const result = calculateAdvancedPrediction(sunData, 'b52');
+    savePredictionToHistory('b52', nextPhien, result.prediction, result.confidence);
+    recordPrediction('b52', nextPhien, result.prediction, result.confidence, result.factors);
+    res.json({ status: 'success', id: TELEGRAM_ID, phien_hien_tai: nextPhien, du_doan: normalizeResult(result.prediction) === 'tai' ? 'TÀI' : 'XỈU', ti_le: `${result.confidence}%`, cau: result.factors?.[0] || 'N/A' });
+  } catch(e) { res.status(500).json({ error: 'Lỗi server' }); }
 });
 
-app.get('/api/predict', async function(req, res) {
-    try {
-        var newData = null;
-        try {
-            var resp = await axios.get('https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx', {
-                timeout: 10000,
-                headers: { 'User-Agent': 'Mozilla/5.0' }
-            });
-            newData = resp.data;
-        } catch(e) {}
-
-        if (newData && newData.phien) {
-            var phien = parseInt(newData.phien);
-            var tong = parseInt(newData.tong) || 0;
-            var kq = tong >= 11 ? 'T' : 'X';
-            var kqText = tong >= 11 ? 'TAI' : 'XIU';
-            
-            checkDD(phien, kqText);
-            
-            var exists = false;
-            for (var i = 0; i < sessionHistory.length; i++) {
-                if (sessionHistory[i].phien === phien) { exists = true; break; }
-            }
-            if (!exists) {
-                sessionHistory.push({
-                    phien: phien, tong: tong, kq: kq, kqText: kqText,
-                    xucXac: [newData.xuc_xac_1, newData.xuc_xac_2, newData.xuc_xac_3],
-                    time: newData.thoi_gian
-                });
-                if (sessionHistory.length > MAX) sessionHistory = sessionHistory.slice(-MAX);
-            }
-        }
-
-        var ketQua = phanTich(sessionHistory);
-        var last = sessionHistory.length > 0 ? sessionHistory[sessionHistory.length - 1] : null;
-        var phienTruoc = last ? last.phien : 0;
-        var phienHienTai = last ? (last.phien + 1) : 0;
-
-        if (phienHienTai > 0 && ketQua && ketQua.duDoan) {
-            var existPred = false;
-            for (var j = 0; j < predictionLog.length; j++) {
-                if (predictionLog[j].phienDD === phienHienTai) { existPred = true; break; }
-            }
-            if (!existPred) {
-                predictionLog.push({
-                    phienDD: phienHienTai, duDoan: ketQua.duDoan,
-                    tiLe: ketQua.tiLe, cau: ketQua.cau,
-                    kqThuc: null, dung: null
-                });
-                if (predictionLog.length > 100) predictionLog = predictionLog.slice(-100);
-            }
-        }
-
-        res.json({
-            status: 'success',
-            phien_truoc: {
-                phien: phienTruoc,
-                ket_qua: last ? last.kqText : '?',
-                ky_hieu: last ? last.kq : '?',
-                tong: last ? last.tong : 0,
-                xuc_xac: last ? last.xucXac : []
-            },
-            du_doan: {
-                phien_hien_tai: phienHienTai,
-                du_doan: ketQua ? ketQua.duDoan : 'TAI',
-                ky_hieu: ketQua ? ketQua.kyHieu : 'T',
-                ti_le: ketQua ? ketQua.tiLe : '50%',
-                cau: ketQua ? ketQua.cau : 'Khong xac dinh',
-                loai_cau: ketQua ? ketQua.loai : 'KHONG CO',
-                suc_manh: ketQua ? ketQua.sucManh : 'YEU',
-                loi_khuyen: ketQua ? ketQua.loiKhuyen : 'THAM DO',
-                tong_models: ketQua ? ketQua.tongModels : 0
-            },
-            cau_phat_hien: ketQua && ketQua.tatCa ? ketQua.tatCa.map(function(c) {
-                return { model: c.model, prediction: c.prediction, confidence: c.confidence, reason: c.reason };
-            }) : []
-        });
-    } catch(err) {
-        res.json({ status: 'error', message: err.message });
-    }
-});
-
-app.get('/api/history', function(req, res) {
-    var dungCount = 0, saiCount = 0;
-    for (var i = 0; i < predictionLog.length; i++) {
-        if (predictionLog[i].dung === true) dungCount++;
-        if (predictionLog[i].dung === false) saiCount++;
-    }
-    res.json({
-        lich_su_du_doan: predictionLog.slice(-30).reverse().map(function(p) {
-            return {
-                phien_du_doan: p.phienDD,
-                ket_qua_du_doan: p.duDoan,
-                ket_qua_game: p.kqThuc || 'DOI',
-                dung_hay_sai: p.dung === true ? '✅ DUNG' : p.dung === false ? '❌ SAI' : '⏳ CHO'
-            };
-        }),
-        thong_ke: { tong: predictionLog.length, dung: dungCount, sai: saiCount }
+app.get('/api/history', async (req, res) => {
+  try {
+    const data = await fetchData();
+    if (data?.data) await verifyPredictions('b52', data.data);
+    const historyWithStatus = predictionHistory.b52.map(record => {
+      const pred = learningData.b52.predictions.find(p => p.phien === record.phien_hien_tai);
+      return { ...record, ket_qua_thuc_te: pred?.actual || null, status: pred?.verified ? (pred.isCorrect ? '✅ ĐÚNG' : '❌ SAI') : '⏳ CHỜ' };
     });
+    res.json({ id: TELEGRAM_ID, total: historyWithStatus.length, history: historyWithStatus });
+  } catch(e) { res.json({ id: TELEGRAM_ID, history: predictionHistory.b52, total: predictionHistory.b52.length }); }
 });
 
-app.listen(PORT, function() {
-    console.log('Sunwin AI Pro - 63 Models running on port ' + PORT);
+app.get('/api/reset', (req, res) => { predictionHistory = { b52: [] }; lastProcessedPhien = { b52: null }; res.json({ status: 'success', message: 'Đã reset lịch sử!' }); });
+
+app.get('/api/stats', (req, res) => {
+  const rs = learningData.b52.reversalState || {};
+  res.json({ id: TELEGRAM_ID, totalPredictions: learningData.b52.totalPredictions, correctPredictions: learningData.b52.correctPredictions, accuracy: learningData.b52.totalPredictions > 0 ? (learningData.b52.correctPredictions / learningData.b52.totalPredictions * 100).toFixed(1) + '%' : 'N/A', currentStreak: learningData.b52.streakAnalysis.currentStreak, bestStreak: learningData.b52.streakAnalysis.bestStreak, autoReversal: { active: rs.active || false, totalReversals: rs.reversalCount || 0 } });
+});
+
+loadLearningData();
+loadPredictionHistory();
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Sun Prediction API - ${TELEGRAM_ID} - Port: ${PORT}`);
+  console.log('  GET /api/predict - Dự đoán');
+  console.log('  GET /api/history - Lịch sử + Đúng/Sai');
+  console.log('  GET /api/reset  - Reset');
+  console.log('  GET /api/stats  - Thống kê');
+  startAutoSaveTask();
 });
