@@ -7,7 +7,6 @@ let sessionHistory = [];
 let predictionLog = [];
 const MAX = 500;
 
-// 200+ CONG THUC CAU
 const CAU_FORMULA = {
     'X331': { next: 'X', conf: 85 }, 'X422': { next: 'X', conf: 85 },
     'X111': { next: 'T', conf: 85 }, 'T665': { next: 'X', conf: 82 },
@@ -49,78 +48,67 @@ function phanTich(history) {
     
     if (len < 2) {
         return {
-            duDoan: 'TAI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
-            cau: 'Dang thu thap du lieu...', loai: 'KHONG CO', sucManh: 'YEU',
-            loiKhuyen: 'DOI THEM DU LIEU', tatCa: [], diemManh: 0
+            duDoan: 'TÀI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
+            cau: 'Đang thu thập dữ liệu', loai: 'KHÔNG CÓ', sucManh: 'YẾU',
+            loiKhuyen: 'ĐỢI THÊM DỮ LIỆU', tatCa: [], diemManh: 0
         };
     }
 
     var str = '';
-    for (var i = 0; i < len; i++) {
-        str += history[i].kq;
-    }
+    for (var i = 0; i < len; i++) str += history[i].kq;
     
     var last = history[len - 1];
-    if (!last) {
-        return {
-            duDoan: 'TAI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
-            cau: 'Loi du lieu', loai: 'LOI', sucManh: 'YEU',
-            loiKhuyen: 'DOI DU LIEU', tatCa: [], diemManh: 0
-        };
-    }
+    if (!last) return { duDoan: 'TÀI', kyHieu: 'T', doTinCay: 40, tiLe: '40%', cau: 'Lỗi', loai: 'LỖI', sucManh: 'YẾU', loiKhuyen: 'ĐỢI', tatCa: [], diemManh: 0 };
     
     var lastKQ = last.kq || 'T';
     var lastTong = last.tong || 10;
     var allCau = [];
 
-    // 1. BET
-    var betPatterns = [
-        { s: 'TTTTTTT', c: 99 }, { s: 'XXXXXXX', c: 99 },
-        { s: 'TTTTTT', c: 98 }, { s: 'XXXXXX', c: 98 },
-        { s: 'TTTTT', c: 95 }, { s: 'XXXXX', c: 95 },
-        { s: 'TTTT', c: 88 }, { s: 'XXXX', c: 88 },
-        { s: 'TTT', c: 75 }, { s: 'XXX', c: 75 }
-    ];
-    for (var i = 0; i < betPatterns.length; i++) {
-        if (str.endsWith(betPatterns[i].s)) {
-            allCau.push({ name: 'BET ' + betPatterns[i].s.length + ' PHIEN', pred: betPatterns[i].s[0], conf: betPatterns[i].c, type: 'BET' });
+    // BET
+    var bets = ['TTTTTTT','XXXXXXX','TTTTTT','XXXXXX','TTTTT','XXXXX','TTTT','XXXX','TTT','XXX'];
+    var confs = [99,99,98,98,95,95,88,88,75,75];
+    for (var i = 0; i < bets.length; i++) {
+        if (str.endsWith(bets[i])) {
+            allCau.push({ name: 'BỆT ' + bets[i].length + ' PHIÊN', pred: bets[i][0], conf: confs[i], type: 'BỆT' });
             break;
         }
     }
 
-    // 2. DAO
-    if (str.endsWith('TXTXTXT')) allCau.push({ name: 'DAO 1-1 DAI', pred: 'X', conf: 92, type: 'DAO' });
-    else if (str.endsWith('XTXTXTX')) allCau.push({ name: 'DAO 1-1 DAI', pred: 'T', conf: 92, type: 'DAO' });
-    else if (str.endsWith('TXTXT')) allCau.push({ name: 'DAO 1-1', pred: 'X', conf: 85, type: 'DAO' });
-    else if (str.endsWith('XTXTX')) allCau.push({ name: 'DAO 1-1', pred: 'T', conf: 85, type: 'DAO' });
-    else if (str.endsWith('TXTX')) allCau.push({ name: 'DAO 1-1', pred: 'X', conf: 78, type: 'DAO' });
-    else if (str.endsWith('XTXT')) allCau.push({ name: 'DAO 1-1', pred: 'T', conf: 78, type: 'DAO' });
+    // DAO 1-1
+    if (str.endsWith('TXTXTXT')) allCau.push({ name: 'ĐẢO 1-1 DÀI', pred: 'X', conf: 92, type: 'ĐẢO' });
+    else if (str.endsWith('XTXTXTX')) allCau.push({ name: 'ĐẢO 1-1 DÀI', pred: 'T', conf: 92, type: 'ĐẢO' });
+    else if (str.endsWith('TXTXT')) allCau.push({ name: 'ĐẢO 1-1', pred: 'X', conf: 85, type: 'ĐẢO' });
+    else if (str.endsWith('XTXTX')) allCau.push({ name: 'ĐẢO 1-1', pred: 'T', conf: 85, type: 'ĐẢO' });
+    else if (str.endsWith('TXTX')) allCau.push({ name: 'ĐẢO 1-1', pred: 'X', conf: 78, type: 'ĐẢO' });
+    else if (str.endsWith('XTXT')) allCau.push({ name: 'ĐẢO 1-1', pred: 'T', conf: 78, type: 'ĐẢO' });
     
-    if (str.endsWith('TTXX')) allCau.push({ name: 'DAO 2-2', pred: 'T', conf: 80, type: 'DAO' });
-    else if (str.endsWith('XXTT')) allCau.push({ name: 'DAO 2-2', pred: 'X', conf: 80, type: 'DAO' });
+    // DAO 2-2
+    if (str.endsWith('TTXX')) allCau.push({ name: 'ĐẢO 2-2', pred: 'T', conf: 80, type: 'ĐẢO' });
+    else if (str.endsWith('XXTT')) allCau.push({ name: 'ĐẢO 2-2', pred: 'X', conf: 80, type: 'ĐẢO' });
     
-    if (str.endsWith('TTTXXX')) allCau.push({ name: 'DAO 3-3', pred: 'T', conf: 78, type: 'DAO' });
-    else if (str.endsWith('XXXTTT')) allCau.push({ name: 'DAO 3-3', pred: 'X', conf: 78, type: 'DAO' });
+    // DAO 3-3
+    if (str.endsWith('TTTXXX')) allCau.push({ name: 'ĐẢO 3-3', pred: 'T', conf: 78, type: 'ĐẢO' });
+    else if (str.endsWith('XXXTTT')) allCau.push({ name: 'ĐẢO 3-3', pred: 'X', conf: 78, type: 'ĐẢO' });
 
-    // 3. NHIP
-    if (str.endsWith('TXXT')) allCau.push({ name: 'NHIP 1-2-1', pred: 'X', conf: 75, type: 'NHIP' });
-    else if (str.endsWith('XTTX')) allCau.push({ name: 'NHIP 1-2-1', pred: 'T', conf: 75, type: 'NHIP' });
-    if (str.endsWith('TTXTT')) allCau.push({ name: 'NHIP 2-1-2', pred: 'X', conf: 72, type: 'NHIP' });
-    else if (str.endsWith('XXTXX')) allCau.push({ name: 'NHIP 2-1-2', pred: 'T', conf: 72, type: 'NHIP' });
-    if (str.endsWith('TTTXXT')) allCau.push({ name: 'NHIP 3-2-1', pred: 'X', conf: 72, type: 'NHIP' });
-    else if (str.endsWith('XXXTTX')) allCau.push({ name: 'NHIP 3-2-1', pred: 'T', conf: 72, type: 'NHIP' });
-    if (str.endsWith('TTXXX')) allCau.push({ name: 'BAC THANG', pred: 'X', conf: 73, type: 'NHIP' });
-    else if (str.endsWith('XXTTT')) allCau.push({ name: 'BAC THANG', pred: 'T', conf: 73, type: 'NHIP' });
+    // NHIP
+    if (str.endsWith('TXXT')) allCau.push({ name: 'NHỊP 1-2-1', pred: 'X', conf: 75, type: 'NHỊP' });
+    else if (str.endsWith('XTTX')) allCau.push({ name: 'NHỊP 1-2-1', pred: 'T', conf: 75, type: 'NHỊP' });
+    if (str.endsWith('TTXTT')) allCau.push({ name: 'NHỊP 2-1-2', pred: 'X', conf: 72, type: 'NHỊP' });
+    else if (str.endsWith('XXTXX')) allCau.push({ name: 'NHỊP 2-1-2', pred: 'T', conf: 72, type: 'NHỊP' });
+    if (str.endsWith('TTTXXT')) allCau.push({ name: 'NHỊP 3-2-1', pred: 'X', conf: 72, type: 'NHỊP' });
+    else if (str.endsWith('XXXTTX')) allCau.push({ name: 'NHỊP 3-2-1', pred: 'T', conf: 72, type: 'NHỊP' });
+    if (str.endsWith('TTXXX')) allCau.push({ name: 'BẬC THANG', pred: 'X', conf: 73, type: 'NHỊP' });
+    else if (str.endsWith('XXTTT')) allCau.push({ name: 'BẬC THANG', pred: 'T', conf: 73, type: 'NHỊP' });
 
-    // 4. HOI
-    if (lastTong >= 17) allCau.push({ name: 'HOI CUC DAI', pred: 'X', conf: 93, type: 'HOI' });
-    else if (lastTong <= 4) allCau.push({ name: 'HOI CUC TIEU', pred: 'T', conf: 93, type: 'HOI' });
-    else if (lastTong >= 16) allCau.push({ name: 'HOI CAO', pred: 'X', conf: 82, type: 'HOI' });
-    else if (lastTong <= 5) allCau.push({ name: 'HOI THAP', pred: 'T', conf: 82, type: 'HOI' });
-    else if (lastTong >= 14) allCau.push({ name: 'HOI NHE', pred: 'X', conf: 68, type: 'HOI' });
-    else if (lastTong <= 7) allCau.push({ name: 'HOI NHE', pred: 'T', conf: 68, type: 'HOI' });
+    // HOI
+    if (lastTong >= 17) allCau.push({ name: 'HỒI CỰC ĐẠI', pred: 'X', conf: 93, type: 'HỒI' });
+    else if (lastTong <= 4) allCau.push({ name: 'HỒI CỰC TIỂU', pred: 'T', conf: 93, type: 'HỒI' });
+    else if (lastTong >= 16) allCau.push({ name: 'HỒI CAO', pred: 'X', conf: 82, type: 'HỒI' });
+    else if (lastTong <= 5) allCau.push({ name: 'HỒI THẤP', pred: 'T', conf: 82, type: 'HỒI' });
+    else if (lastTong >= 14) allCau.push({ name: 'HỒI NHẸ', pred: 'X', conf: 68, type: 'HỒI' });
+    else if (lastTong <= 7) allCau.push({ name: 'HỒI NHẸ', pred: 'T', conf: 68, type: 'HỒI' });
 
-    // 5. FORMULA
+    // FORMULA
     var keys = Object.keys(CAU_FORMULA);
     for (var j = 0; j < keys.length; j++) {
         var key = keys[j];
@@ -133,58 +121,45 @@ function phanTich(history) {
         }
     }
 
-    // 6. SONG
+    // SONG
     var doiChieu = 0;
-    for (var k = 1; k < str.length; k++) {
-        if (str[k] !== str[k-1]) doiChieu++;
-    }
+    for (var k = 1; k < str.length; k++) if (str[k] !== str[k-1]) doiChieu++;
     var tiLeDao = doiChieu / Math.max(str.length - 1, 1);
-    if (tiLeDao >= 0.75 && str.length >= 8) {
-        allCau.push({ name: 'SONG CAO TAN', pred: lastKQ === 'T' ? 'X' : 'T', conf: 75, type: 'SONG' });
-    } else if (tiLeDao <= 0.2 && str.length >= 8) {
-        allCau.push({ name: 'IT DAO CHIEU', pred: lastKQ, conf: 72, type: 'SONG' });
-    }
+    if (tiLeDao >= 0.75 && str.length >= 8) allCau.push({ name: 'SÓNG CAO TẦN', pred: lastKQ === 'T' ? 'X' : 'T', conf: 75, type: 'SÓNG' });
+    else if (tiLeDao <= 0.2 && str.length >= 8) allCau.push({ name: 'ÍT ĐẢO CHIỀU', pred: lastKQ, conf: 72, type: 'SÓNG' });
 
-    // 7. NGHIENG
+    // NGHIENG
     var tCount = 0;
-    for (var m = 0; m < len; m++) {
-        if (history[m].kq === 'T') tCount++;
-    }
+    for (var m = 0; m < len; m++) if (history[m].kq === 'T') tCount++;
     var tRate = tCount / len;
     if (len >= 8) {
-        if (tRate >= 0.75 && str.endsWith('TT')) {
-            allCau.push({ name: 'NGHIENG TAI + BET', pred: 'T', conf: 82, type: 'NGHIENG' });
-        } else if (tRate <= 0.25 && str.endsWith('XX')) {
-            allCau.push({ name: 'NGHIENG XIU + BET', pred: 'X', conf: 82, type: 'NGHIENG' });
-        } else if (tRate >= 0.7) {
-            allCau.push({ name: 'NGHIENG TAI - BE', pred: 'X', conf: 72, type: 'NGHIENG' });
-        } else if (tRate <= 0.3) {
-            allCau.push({ name: 'NGHIENG XIU - BE', pred: 'T', conf: 72, type: 'NGHIENG' });
-        }
+        if (tRate >= 0.75 && str.endsWith('TT')) allCau.push({ name: 'NGHIÊNG TÀI + BỆT', pred: 'T', conf: 82, type: 'NGHIÊNG' });
+        else if (tRate <= 0.25 && str.endsWith('XX')) allCau.push({ name: 'NGHIÊNG XỈU + BỆT', pred: 'X', conf: 82, type: 'NGHIÊNG' });
+        else if (tRate >= 0.7) allCau.push({ name: 'NGHIÊNG TÀI - BẺ', pred: 'X', conf: 72, type: 'NGHIÊNG' });
+        else if (tRate <= 0.3) allCau.push({ name: 'NGHIÊNG XỈU - BẺ', pred: 'T', conf: 72, type: 'NGHIÊNG' });
     }
 
-    // SAP XEP
     allCau.sort(function(a, b) { return b.conf - a.conf; });
     var best = allCau[0];
-
     var xCount = len - tCount;
+
     var thongKe = {
         tong: len, tai: tCount, xiu: xCount,
         tiLeTai: (tRate * 100).toFixed(1) + '%',
         tiLeXiu: ((1 - tRate) * 100).toFixed(1) + '%',
-        xuHuong: tCount > xCount ? 'THIEN TAI' : xCount > tCount ? 'THIEN XIU' : 'CAN BANG'
+        xuHuong: tCount > xCount ? 'THIÊN TÀI' : xCount > tCount ? 'THIÊN XỈU' : 'CÂN BẰNG'
     };
 
     if (best) {
         return {
-            duDoan: best.pred === 'T' ? 'TAI' : 'XIU',
+            duDoan: best.pred === 'T' ? 'TÀI' : 'XỈU',
             kyHieu: best.pred,
             doTinCay: best.conf,
             tiLe: best.conf + '%',
             cau: best.name,
             loai: best.type,
-            sucManh: best.conf >= 90 ? 'RAT MANH' : best.conf >= 80 ? 'MANH' : 'VUA',
-            loiKhuyen: best.conf >= 90 ? 'VAO TIEN MANH' : best.conf >= 80 ? 'VAO TIEN' : 'THAM DO',
+            sucManh: best.conf >= 90 ? 'RẤT MẠNH' : best.conf >= 80 ? 'MẠNH' : 'VỪA',
+            loiKhuyen: best.conf >= 90 ? 'VÀO TIỀN MẠNH' : best.conf >= 80 ? 'VÀO TIỀN' : 'THĂM DÒ',
             tatCa: allCau.slice(0, 10),
             thongKe: thongKe,
             diemManh: best.conf
@@ -192,12 +167,12 @@ function phanTich(history) {
     }
 
     return {
-        duDoan: lastKQ === 'T' ? 'XIU' : 'TAI',
+        duDoan: lastKQ === 'T' ? 'XỈU' : 'TÀI',
         kyHieu: lastKQ === 'T' ? 'X' : 'T',
         doTinCay: 50, tiLe: '50%',
-        cau: 'Khong co cau - DANH NGUOC',
-        loai: 'DAO NGUOC', sucManh: 'YEU',
-        loiKhuyen: 'THAM DO NHO', tatCa: [], thongKe: thongKe, diemManh: 0
+        cau: 'Không có cầu - ĐÁNH NGƯỢC',
+        loai: 'ĐẢO NGƯỢC', sucManh: 'YẾU',
+        loiKhuyen: 'THĂM DÒ NHỎ', tatCa: [], thongKe: thongKe, diemManh: 0
     };
 }
 
@@ -213,7 +188,7 @@ function checkDD(phien, kq) {
 
 // ROUTES
 app.get('/', function(req, res) {
-    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:700px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:8px 0;background:linear-gradient(45deg,#f6d365,#fda085);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.box{padding:10px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:1.8em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:10px 20px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:.9em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BET{background:#da3633}.tag.DAO{background:#1f6feb}.tag.NHIP{background:#8957e5}.tag.HOI{background:#d2991d;color:#000}.tag.NGHIENG{background:#3fb950;color:#000}.tag.SONG{background:#db6d28}.tag.FORMULA{background:#e37400}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:.75em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI</h1><p style="text-align:center;color:#8b949e;font-size:.75em">7 LOAI CAU • 200+ FORMULA</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DU DOAN</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 SU</a></div><div id="out"><div class="loading">⏳ Dang tai...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ Dang phan tich...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.current||{};var dd=d.prediction||{};var tk=d.stats||{};var cau=d.patterns||[];var log=d.pred_log||[];var html="";html+=\'<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center>📌 DU DOAN PHIEN TIEP THEO</h3><div class=grid3><div class=box><small>PHIEN</small><div class="big yellow">#\'+dd.phien_du_doan+\'</div></div><div class="box \'+(dd.ky_hieu=="T"?"TAI":"XIU")+\'"><small>DU DOAN</small><div class=big style=font-size:2.5em;color:\'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+dd.du_doan+\'</div></div><div class=box><small>TI LE THANG</small><div class="big yellow">\'+dd.ti_le_thang+\'</div></div></div><p style=margin-top:8px>📊 <b>\'+dd.cau+\'</b> <span class="tag \'+dd.loai_cau+\'">\'+dd.loai_cau+\'</span> | 💡 <b>\'+dd.loi_khuyen+\'</b></p></div>\';html+=\'<div class=card><h3>📍 PHIEN TRUOC: #\'+p.phien_truoc+\'</h3><div class=grid2><div class="box \'+(p.ky_hieu=="T"?"TAI":"XIU")+\'"><small>KET QUA</small><div class=big style=color:\'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+p.ket_qua+\'</div><small>Tong: \'+p.tong+\'</small></div><div class=box><small>XUC XAC</small><div class=big>\'+(p.xuc_xac||[]).join(" - ")+\'</div></div></div></div>\';html+=\'<div class=card><h3>📈 THONG KE \'+tk.tong_phien+\' PHIEN</h3><div class=grid2><div class=box><small>TAI</small><div class="big red">\'+tk.tai+\'</div><small>\'+tk.ti_le_tai+\'</small></div><div class=box><small>XIU</small><div class="big green">\'+tk.xiu+\'</div><small>\'+tk.ti_le_xiu+\'</small></div></div><p>Xu huong: <b>\'+tk.xu_huong+\'</b> | Du doan dung: <b>\'+tk.ti_le_dung+\'</b></p></div>\';if(cau.length>0){html+=\'<div class=card><h3>🔍 CAU PHAT HIEN</h3>\';for(var i=0;i<cau.length;i++){var c=cau[i];html+=\'<p style=margin:3px 0;font-size:.8em;padding:4px">\'+(i+1)+\'. <span class="tag \'+c.type+\'">\'+c.type+\'</span> <b>\'+c.name+\'</b> → <b style=color:\'+(c.predict=="TAI"?"#f85149":"#3fb950")+\'>\'+c.predict+\'</b> (\'+c.conf+\')</p>\'}html+=\'</div>\'}if(log.length>0){html+=\'<div class=card><h3>📋 LICH SU DU DOAN</h3><pre>\';for(var j=0;j<log.length;j++){var l=log[j];var tt=l.dung===true?"✅ DUNG":l.dung===false?"❌ SAI":"⏳ CHO";html+=\'#\'+l.phien+\' | DD: \'+l.du_doan+\' | KQ: \'+(l.ket_qua||"DOI")+\' | \'+tt+\' | \'+l.ti_le+\'\\n\'}html+=\'</pre></div>\'}if(d.recent){html+=\'<div class=card><h3>📜 15 PHIEN GAN NHAT</h3><pre>\';for(var k=0;k<d.recent.length;k++){var h=d.recent[k];html+=\'#\'+h.phien+\' | \'+h.ket_qua+\' (\'+h.tong+\') | \'+h.xuc_xac.join(\',\')+\'\\n\'}html+=\'</pre></div>\'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML=\'<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LOI</h3><p>\'+e.message+\'</p><button class=btn onclick=load()>🔄 THU LAI</button></div>\'}}load();setInterval(load,25000);</script></body></html>');
+    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:700px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:8px 0;background:linear-gradient(45deg,#f6d365,#fda085);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.box{padding:12px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:2em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:12px 24px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:1em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BỆT{background:#da3633}.tag.ĐẢO{background:#1f6feb}.tag.NHỊP{background:#8957e5}.tag.HỒI{background:#d2991d;color:#000}.tag.NGHIÊNG{background:#3fb950;color:#000}.tag.SÓNG{background:#db6d28}.tag.FORMULA{background:#e37400}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:10px;border-radius:6px;overflow-x:auto;font-size:.8em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI - DỰ ĐOÁN TÀI XỈU</h1><p style="text-align:center;color:#8b949e;font-size:.8em">7 LOẠI CẦU • 200+ FORMULA</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DỰ ĐOÁN NGAY</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 LỊCH SỬ</a></div><div id="out"><div class="loading">⏳ Đang tải...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ Đang phân tích...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.phien_truoc||{};var dd=d.du_doan||{};var cau=d.cau_phat_hien||[];var log=d.lich_su_du_doan||[];var html="";html+='<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center;color:#f6d365>📌 DỰ ĐOÁN PHIÊN HIỆN TẠI</h3><div style=text-align:center;margin:10px 0><span style=font-size:1.2em>PHIÊN HIỆN TẠI: </span><span class="big yellow">#'+dd.phien_hien_tai+'</span></div><div class=grid2><div class="box '+(dd.ky_hieu=="T"?"TAI":"XIU")+'"><small>DỰ ĐOÁN</small><div class=big style=font-size:2.5em;color:'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+'>'+dd.du_doan+'</div></div><div class=box><small>TỈ LỆ THẮNG</small><div class="big yellow">'+dd.ti_le+'</div></div></div><p style=margin-top:10px>💡 <b>Lời khuyên:</b> '+dd.loi_khuyen+'</p><p>📊 <b>Cầu:</b> '+dd.cau+' <span class="tag '+dd.loai_cau+'">'+dd.loai_cau+'</span></p></div>';html+='<div class=card><h3>📍 PHIÊN TRƯỚC</h3><div class=grid2><div class=box><small>PHIÊN</small><div class=big>#'+p.phien+'</div></div><div class="box '+(p.ky_hieu=="T"?"TAI":"XIU")+'"><small>KẾT QUẢ</small><div class=big style=color:'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+'>'+p.ket_qua+'</div><small>Tổng: '+p.tong+' | Xúc xắc: '+(p.xuc_xac||[]).join(", ")+'</small></div></div></div>';if(cau.length>0){html+='<div class=card><h3>🔍 CẦU PHÁT HIỆN</h3>';for(var i=0;i<cau.length;i++){var c=cau[i];html+='<p style=margin:3px 0;font-size:.8em;padding:4px;border-radius:3px;background:rgba(255,255,255,0.02)">'+(i+1)+'. <span class="tag '+c.type+'">'+c.type+'</span> <b>'+c.name+'</b> → <b style=color:'+(c.predict=="TÀI"?"#f85149":"#3fb950")+'>'+c.predict+'</b> ('+c.conf+')</p>'}html+='</div>'}if(log.length>0){html+='<div class=card><h3>📋 LỊCH SỬ DỰ ĐOÁN</h3><pre>PHIÊN DỰ ĐOÁN | KẾT QUẢ DỰ ĐOÁN | KẾT QUẢ GAME | ĐÚNG/SAI\n'+("─".repeat(60))+'\n';for(var j=0;j<log.length;j++){var l=log[j];var tt=l.dung===true?"✅ ĐÚNG":l.dung===false?"❌ SAI":"⏳ CHỜ";html+='#'+l.phien+' | '+l.du_doan+' | '+(l.ket_qua||"ĐỢI")+' | '+tt+'\n'}html+='</pre></div>'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML='<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LỖI</h3><p>'+e.message+'</p><button class=btn onclick=load()>🔄 THỬ LẠI</button></div>'}}load();setInterval(load,25000);</script></body></html>');
 });
 
 app.get('/api/predict', async function(req, res) {
@@ -231,7 +206,7 @@ app.get('/api/predict', async function(req, res) {
             var phien = parseInt(newData.phien);
             var tong = parseInt(newData.tong) || 0;
             var kq = tong >= 11 ? 'T' : 'X';
-            var kqText = tong >= 11 ? 'TAI' : 'XIU';
+            var kqText = tong >= 11 ? 'TÀI' : 'XỈU';
             
             checkDD(phien, kqText);
             
@@ -252,16 +227,16 @@ app.get('/api/predict', async function(req, res) {
         var ketQua = phanTich(sessionHistory);
         var last = sessionHistory.length > 0 ? sessionHistory[sessionHistory.length - 1] : null;
         var phienTruoc = last ? last.phien : 0;
-        var phienDD = last ? (last.phien + 1) : 0;
+        var phienHienTai = last ? (last.phien + 1) : 0;
 
-        if (phienDD > 0 && ketQua && ketQua.duDoan) {
+        if (phienHienTai > 0 && ketQua && ketQua.duDoan) {
             var existPred = false;
             for (var j = 0; j < predictionLog.length; j++) {
-                if (predictionLog[j].phienDD === phienDD) { existPred = true; break; }
+                if (predictionLog[j].phienDD === phienHienTai) { existPred = true; break; }
             }
             if (!existPred) {
                 predictionLog.push({
-                    phienDD: phienDD, duDoan: ketQua.duDoan,
+                    phienDD: phienHienTai, duDoan: ketQua.duDoan,
                     tiLe: ketQua.tiLe, cau: ketQua.cau,
                     kqThuc: null, dung: null
                 });
@@ -269,57 +244,30 @@ app.get('/api/predict', async function(req, res) {
             }
         }
 
-        var dungCount = 0, saiCount = 0;
-        for (var k = 0; k < predictionLog.length; k++) {
-            if (predictionLog[k].dung === true) dungCount++;
-            if (predictionLog[k].dung === false) saiCount++;
-        }
-        var tongDD = dungCount + saiCount;
-        var tiLeDung = tongDD > 0 ? ((dungCount/tongDD)*100).toFixed(1)+'%' : 'N/A';
-
-        var thongKe = ketQua && ketQua.thongKe ? ketQua.thongKe : { tong: 0, tai: 0, xiu: 0, tiLeTai: '0%', tiLeXiu: '0%', xuHuong: 'CHUA RO' };
-
         res.json({
             status: 'success',
-            current: {
-                phien_truoc: phienTruoc,
+            phien_truoc: {
+                phien: phienTruoc,
                 ket_qua: last ? last.kqText : '?',
                 ky_hieu: last ? last.kq : '?',
                 tong: last ? last.tong : 0,
-                xuc_xac: last ? last.xucXac : [],
-                time: last ? last.time : ''
+                xuc_xac: last ? last.xucXac : []
             },
-            prediction: {
-                phien_du_doan: phienDD,
-                du_doan: ketQua ? ketQua.duDoan : 'TAI',
+            du_doan: {
+                phien_hien_tai: phienHienTai,
+                du_doan: ketQua ? ketQua.duDoan : 'TÀI',
                 ky_hieu: ketQua ? ketQua.kyHieu : 'T',
-                ti_le_thang: ketQua ? ketQua.tiLe : '50%',
-                cau: ketQua ? ketQua.cau : 'Khong xac dinh',
-                loai_cau: ketQua ? ketQua.loai : 'KHONG CO',
-                suc_manh: ketQua ? ketQua.sucManh : 'YEU',
-                loi_khuyen: ketQua ? ketQua.loiKhuyen : 'THAM DO',
-                diem_manh: ketQua ? ketQua.diemManh : 0
+                ti_le: ketQua ? ketQua.tiLe : '50%',
+                cau: ketQua ? ketQua.cau : 'Không xác định',
+                loai_cau: ketQua ? ketQua.loai : 'KHÔNG CÓ',
+                suc_manh: ketQua ? ketQua.sucManh : 'YẾU',
+                loi_khuyen: ketQua ? ketQua.loiKhuyen : 'THĂM DÒ'
             },
-            stats: {
-                tong_phien: thongKe.tong,
-                tai: thongKe.tai,
-                xiu: thongKe.xiu,
-                ti_le_tai: thongKe.tiLeTai,
-                ti_le_xiu: thongKe.tiLeXiu,
-                xu_huong: thongKe.xuHuong,
-                tong_du_doan: tongDD,
-                dung: dungCount,
-                sai: saiCount,
-                ti_le_dung: tiLeDung
-            },
-            patterns: ketQua && ketQua.tatCa ? ketQua.tatCa.map(function(c) {
-                return { name: c.name, type: c.type, predict: c.pred === 'T' ? 'TAI' : 'XIU', conf: c.conf + '%' };
+            cau_phat_hien: ketQua && ketQua.tatCa ? ketQua.tatCa.slice(0, 10).map(function(c) {
+                return { name: c.name, type: c.type, predict: c.pred === 'T' ? 'TÀI' : 'XỈU', conf: c.conf + '%' };
             }) : [],
-            pred_log: predictionLog.slice(-10).reverse().map(function(p) {
-                return { phien: p.phienDD, du_doan: p.duDoan, ti_le: p.tiLe, ket_qua: p.kqThuc || 'DOI', dung: p.dung };
-            }),
-            recent: sessionHistory.slice(-15).reverse().map(function(s) {
-                return { phien: s.phien, ket_qua: s.kqText, tong: s.tong, xuc_xac: s.xucXac };
+            lich_su_du_doan: predictionLog.slice(-10).reverse().map(function(p) {
+                return { phien: p.phienDD, du_doan: p.duDoan, ket_qua: p.kqThuc || 'ĐỢI', dung: p.dung };
             })
         });
     } catch(err) {
@@ -335,16 +283,20 @@ app.get('/api/history', function(req, res) {
     }
     
     res.json({
-        tong_phien: sessionHistory.length,
-        tong_du_doan: predictionLog.length,
-        dung: dungCount, sai: saiCount,
-        ti_le_dung: (dungCount+saiCount) > 0 ? ((dungCount/(dungCount+saiCount))*100).toFixed(1)+'%' : 'N/A',
-        sessions: sessionHistory.slice(-30).reverse().map(function(s) {
-            return { phien: s.phien, ket_qua: s.kqText, tong: s.tong, xuc_xac: s.xucXac };
+        lich_su_du_doan: predictionLog.slice(-30).reverse().map(function(p) {
+            return {
+                phien_du_doan: p.phienDD,
+                ket_qua_du_doan: p.duDoan,
+                ket_qua_game: p.kqThuc || 'ĐỢI',
+                dung_hay_sai: p.dung === true ? '✅ ĐÚNG' : p.dung === false ? '❌ SAI' : '⏳ CHỜ'
+            };
         }),
-        predictions: predictionLog.slice(-30).reverse().map(function(p) {
-            return { phien_du_doan: p.phienDD, du_doan: p.duDoan, ti_le: p.tiLe, ket_qua_thuc_te: p.kqThuc || 'DOI', dung: p.dung };
-        })
+        thong_ke: {
+            tong_du_doan: predictionLog.length,
+            dung: dungCount,
+            sai: saiCount,
+            ti_le_dung: (dungCount+saiCount) > 0 ? ((dungCount/(dungCount+saiCount))*100).toFixed(1)+'%' : 'N/A'
+        }
     });
 });
 
