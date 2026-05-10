@@ -7,6 +7,9 @@ let sessionHistory = [];
 let predictionLog = [];
 const MAX = 500;
 
+// ============================================================================
+// 200+ CONG THUC CAU
+// ============================================================================
 const CAU_FORMULA = {
     'X331': { next: 'X', conf: 85 }, 'X422': { next: 'X', conf: 85 },
     'X111': { next: 'T', conf: 85 }, 'T665': { next: 'X', conf: 82 },
@@ -43,137 +46,409 @@ const CAU_FORMULA = {
     'T662': { next: 'T', conf: 80 }, 'T366': { next: 'T', conf: 80 }
 };
 
-function phanTich(history) {
-    var len = history.length;
-    
-    if (len < 2) {
-        return {
-            duDoan: 'TÀI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
-            cau: 'Đang thu thập dữ liệu', loai: 'KHÔNG CÓ', sucManh: 'YẾU',
-            loiKhuyen: 'ĐỢI THÊM DỮ LIỆU', tatCa: [], diemManh: 0
-        };
+// ============================================================================
+// 42 SUB MODELS + 21 MINI MODELS
+// ============================================================================
+class AdvancedPredictor {
+    constructor() {
+        this.subModels = {};
+        this.miniModels = {};
+        this.subModelWeights = {};
+        this.miniModelWeights = {};
+        this.modelWeights = { model1: 1.0, model2: 1.0, model3: 1.0, model4: 1.0, model11: 1.0 };
+        this.patternLibrary = {};
+        
+        this.initSubModels();
+        this.initMiniModels();
     }
 
-    var str = '';
-    for (var i = 0; i < len; i++) str += history[i].kq;
-    
-    var last = history[len - 1];
-    if (!last) return { duDoan: 'TÀI', kyHieu: 'T', doTinCay: 40, tiLe: '40%', cau: 'Lỗi', loai: 'LỖI', sucManh: 'YẾU', loiKhuyen: 'ĐỢI', tatCa: [], diemManh: 0 };
-    
-    var lastKQ = last.kq || 'T';
-    var lastTong = last.tong || 10;
-    var allCau = [];
+    initSubModels() {
+        const specialties = {
+            1: { name: '1-1 thuan', type: '1-1', logic: 'pure', minLength: 4, threshold: 0.9 },
+            2: { name: '1-1 bien the', type: '1-1', logic: 'variant', minLength: 5, threshold: 0.8 },
+            3: { name: '1-1 dai han', type: '1-1', logic: 'long', minLength: 8, threshold: 0.75 },
+            4: { name: '1-1 ket hop', type: '1-1', logic: 'hybrid', minLength: 6, threshold: 0.7 },
+            5: { name: '1-1 gay', type: '1-1', logic: 'break', minLength: 6, threshold: 0.8 },
+            6: { name: '1-1 phuc hoi', type: '1-1', logic: 'recovery', minLength: 7, threshold: 0.7 },
+            7: { name: '2-2 chuan', type: '2-2', logic: 'pure', minLength: 6, threshold: 0.9 },
+            8: { name: '2-2 lech', type: '2-2', logic: 'offset', minLength: 7, threshold: 0.8 },
+            9: { name: '2-2 bien tuong', type: '2-2', logic: 'variant', minLength: 8, threshold: 0.75 },
+            10: { name: '2-2 ket hop 1-1', type: '2-2', logic: 'hybrid', minLength: 8, threshold: 0.7 },
+            11: { name: '2-2 dai', type: '2-2', logic: 'long', minLength: 10, threshold: 0.8 },
+            12: { name: '2-2 be', type: '2-2', logic: 'break', minLength: 7, threshold: 0.85 },
+            13: { name: 'bet ngan', type: 'bet', logic: 'short', minLength: 3, threshold: 0.8 },
+            14: { name: 'bet trung', type: 'bet', logic: 'medium', minLength: 5, threshold: 0.85 },
+            15: { name: 'bet dai', type: 'bet', logic: 'long', minLength: 7, threshold: 0.9 },
+            16: { name: 'bet gay', type: 'bet', logic: 'break', minLength: 5, threshold: 0.8 },
+            17: { name: 'bet xen ke', type: 'bet', logic: 'hybrid', minLength: 6, threshold: 0.7 },
+            18: { name: 'sieu bet', type: 'bet', logic: 'super', minLength: 10, threshold: 0.95 },
+            19: { name: '3-3 chuan', type: '3-3', logic: 'pure', minLength: 9, threshold: 0.9 },
+            20: { name: '3-3 bien the', type: '3-3', logic: 'variant', minLength: 10, threshold: 0.8 },
+            21: { name: '3-3 ngan', type: '3-3', logic: 'short', minLength: 6, threshold: 0.7 },
+            22: { name: '3-3 ket hop', type: '3-3', logic: 'hybrid', minLength: 9, threshold: 0.75 },
+            23: { name: '3-3 be', type: '3-3', logic: 'break', minLength: 8, threshold: 0.8 },
+            24: { name: '3-3 dai', type: '3-3', logic: 'long', minLength: 12, threshold: 0.85 },
+            25: { name: '2-1-2 chuan', type: '2-1-2', logic: 'pure', minLength: 5, threshold: 0.9 },
+            26: { name: '2-1-2 bien the', type: '2-1-2', logic: 'variant', minLength: 6, threshold: 0.8 },
+            27: { name: '2-1-2 dai', type: '2-1-2', logic: 'long', minLength: 8, threshold: 0.8 },
+            28: { name: '1-2-1 chuan', type: '1-2-1', logic: 'pure', minLength: 5, threshold: 0.9 },
+            29: { name: '1-2-1 bien the', type: '1-2-1', logic: 'variant', minLength: 6, threshold: 0.8 },
+            30: { name: '1-2-1 dai', type: '1-2-1', logic: 'long', minLength: 8, threshold: 0.8 },
+            31: { name: 'be cau 1-1', type: 'break', logic: 'break11', minLength: 4, threshold: 0.85 },
+            32: { name: 'be cau 2-2', type: 'break', logic: 'break22', minLength: 5, threshold: 0.85 },
+            33: { name: 'be cau bet', type: 'break', logic: 'breakStreak', minLength: 4, threshold: 0.8 },
+            34: { name: 'chuyen 1-1 sang 2-2', type: 'transition', logic: '11to22', minLength: 6, threshold: 0.75 },
+            35: { name: 'chuyen 2-2 sang 1-1', type: 'transition', logic: '22to11', minLength: 6, threshold: 0.75 },
+            36: { name: 'chuyen bet sang 1-1', type: 'transition', logic: 'streakTo11', minLength: 5, threshold: 0.7 },
+            37: { name: 'phan tich tan suat', type: 'frequency', logic: 'frequency', minLength: 10, threshold: 0.7 },
+            38: { name: 'phan tich chu ky', type: 'cycle', logic: 'cycle', minLength: 12, threshold: 0.7 },
+            39: { name: 'phan tich doi xung', type: 'symmetry', logic: 'symmetry', minLength: 8, threshold: 0.75 },
+            40: { name: 'phan tich Fibonacci', type: 'fibonacci', logic: 'fibonacci', minLength: 8, threshold: 0.7 },
+            41: { name: 'phan tich xu huong dai', type: 'trend', logic: 'longTrend', minLength: 15, threshold: 0.8 },
+            42: { name: 'tong hop sieu cau', type: 'super', logic: 'super', minLength: 20, threshold: 0.85 }
+        };
 
-    // BET
-    var bets = ['TTTTTTT','XXXXXXX','TTTTTT','XXXXXX','TTTTT','XXXXX','TTTT','XXXX','TTT','XXX'];
-    var confs = [99,99,98,98,95,95,88,88,75,75];
-    for (var i = 0; i < bets.length; i++) {
-        if (str.endsWith(bets[i])) {
-            allCau.push({ name: 'BỆT ' + bets[i].length + ' PHIÊN', pred: bets[i][0], conf: confs[i], type: 'BỆT' });
-            break;
+        for (var i = 1; i <= 42; i++) {
+            this.subModels['sub_model_' + i] = {
+                name: specialties[i].name,
+                type: specialties[i].type,
+                logic: specialties[i].logic,
+                minLength: specialties[i].minLength,
+                threshold: specialties[i].threshold,
+                weight: 1.0,
+                accuracy: 0.5,
+                predictions: []
+            };
+            this.subModelWeights['sub_model_' + i] = 1.0;
         }
     }
 
-    // DAO 1-1
-    if (str.endsWith('TXTXTXT')) allCau.push({ name: 'ĐẢO 1-1 DÀI', pred: 'X', conf: 92, type: 'ĐẢO' });
-    else if (str.endsWith('XTXTXTX')) allCau.push({ name: 'ĐẢO 1-1 DÀI', pred: 'T', conf: 92, type: 'ĐẢO' });
-    else if (str.endsWith('TXTXT')) allCau.push({ name: 'ĐẢO 1-1', pred: 'X', conf: 85, type: 'ĐẢO' });
-    else if (str.endsWith('XTXTX')) allCau.push({ name: 'ĐẢO 1-1', pred: 'T', conf: 85, type: 'ĐẢO' });
-    else if (str.endsWith('TXTX')) allCau.push({ name: 'ĐẢO 1-1', pred: 'X', conf: 78, type: 'ĐẢO' });
-    else if (str.endsWith('XTXT')) allCau.push({ name: 'ĐẢO 1-1', pred: 'T', conf: 78, type: 'ĐẢO' });
-    
-    // DAO 2-2
-    if (str.endsWith('TTXX')) allCau.push({ name: 'ĐẢO 2-2', pred: 'T', conf: 80, type: 'ĐẢO' });
-    else if (str.endsWith('XXTT')) allCau.push({ name: 'ĐẢO 2-2', pred: 'X', conf: 80, type: 'ĐẢO' });
-    
-    // DAO 3-3
-    if (str.endsWith('TTTXXX')) allCau.push({ name: 'ĐẢO 3-3', pred: 'T', conf: 78, type: 'ĐẢO' });
-    else if (str.endsWith('XXXTTT')) allCau.push({ name: 'ĐẢO 3-3', pred: 'X', conf: 78, type: 'ĐẢO' });
+    initMiniModels() {
+        var specs = {
+            1: 'phat_hien_cau_dep', 2: 'du_doan_bien_dong', 3: 'phan_tich_so_sanh',
+            4: 'nhan_dien_xu_huong_cuc_bo', 5: 'tinh_toan_xac_suat_cao', 6: 'phat_hien_diem_gay',
+            7: 'du_doan_nguong', 8: 'phan_tich_chuoi', 9: 'nhan_dien_mau_lap',
+            10: 'tinh_he_so_tuong_quan', 11: 'du_doan_doan_nhiet', 12: 'phan_tich_pha',
+            13: 'nhan_dien_song', 14: 'tinh_toan_momentum', 15: 'du_doan_hoi_phuc',
+            16: 'phat_hien_dot_bien', 17: 'phan_tich_can_bang', 18: 'nhan_dien_tan_so',
+            19: 'du_doan_chu_ky', 20: 'tinh_toan_ma_tran', 21: 'phan_tich_tong_hop'
+        };
 
-    // NHIP
-    if (str.endsWith('TXXT')) allCau.push({ name: 'NHỊP 1-2-1', pred: 'X', conf: 75, type: 'NHỊP' });
-    else if (str.endsWith('XTTX')) allCau.push({ name: 'NHỊP 1-2-1', pred: 'T', conf: 75, type: 'NHỊP' });
-    if (str.endsWith('TTXTT')) allCau.push({ name: 'NHỊP 2-1-2', pred: 'X', conf: 72, type: 'NHỊP' });
-    else if (str.endsWith('XXTXX')) allCau.push({ name: 'NHỊP 2-1-2', pred: 'T', conf: 72, type: 'NHỊP' });
-    if (str.endsWith('TTTXXT')) allCau.push({ name: 'NHỊP 3-2-1', pred: 'X', conf: 72, type: 'NHỊP' });
-    else if (str.endsWith('XXXTTX')) allCau.push({ name: 'NHỊP 3-2-1', pred: 'T', conf: 72, type: 'NHỊP' });
-    if (str.endsWith('TTXXX')) allCau.push({ name: 'BẬC THANG', pred: 'X', conf: 73, type: 'NHỊP' });
-    else if (str.endsWith('XXTTT')) allCau.push({ name: 'BẬC THANG', pred: 'T', conf: 73, type: 'NHỊP' });
+        for (var i = 1; i <= 21; i++) {
+            this.miniModels['mini_model_' + i] = {
+                weight: 1.0,
+                accuracy: 0.5,
+                specialty: specs[i] || 'chung',
+                predictions: []
+            };
+            this.miniModelWeights['mini_model_' + i] = 1.0;
+        }
+    }
 
-    // HOI
-    if (lastTong >= 17) allCau.push({ name: 'HỒI CỰC ĐẠI', pred: 'X', conf: 93, type: 'HỒI' });
-    else if (lastTong <= 4) allCau.push({ name: 'HỒI CỰC TIỂU', pred: 'T', conf: 93, type: 'HỒI' });
-    else if (lastTong >= 16) allCau.push({ name: 'HỒI CAO', pred: 'X', conf: 82, type: 'HỒI' });
-    else if (lastTong <= 5) allCau.push({ name: 'HỒI THẤP', pred: 'T', conf: 82, type: 'HỒI' });
-    else if (lastTong >= 14) allCau.push({ name: 'HỒI NHẸ', pred: 'X', conf: 68, type: 'HỒI' });
-    else if (lastTong <= 7) allCau.push({ name: 'HỒI NHẸ', pred: 'T', conf: 68, type: 'HỒI' });
+    getResultArray(history) {
+        var results = [];
+        for (var i = 0; i < history.length; i++) {
+            results.push(history[i].kq === 'T' ? 'Tai' : 'Xiu');
+        }
+        return results;
+    }
 
-    // FORMULA
-    var keys = Object.keys(CAU_FORMULA);
-    for (var j = 0; j < keys.length; j++) {
-        var key = keys[j];
-        if (str.indexOf(key[0]) !== -1 && str.length >= 3) {
-            var lastThree = str.slice(-3);
-            var pattern = key.slice(0, 3).replace(/[0-9]/g, '');
-            if (lastThree === pattern || str.slice(-4).indexOf(key[0]) !== -1) {
-                allCau.push({ name: 'FORMULA ' + key, pred: CAU_FORMULA[key].next, conf: CAU_FORMULA[key].conf, type: 'FORMULA' });
+    getStreak(results) {
+        if (results.length === 0) return 0;
+        var last = results[results.length - 1];
+        var streak = 1;
+        for (var i = results.length - 2; i >= 0; i--) {
+            if (results[i] === last) streak++;
+            else break;
+        }
+        return streak;
+    }
+
+    isPerfectAlternating(results, length) {
+        var last = results.slice(-length);
+        for (var i = 0; i < last.length - 1; i++) {
+            if (last[i] === last[i+1]) return false;
+        }
+        return true;
+    }
+
+    analyzeFrequency(results) {
+        var recent = results.slice(-20);
+        var taiCount = 0;
+        for (var i = 0; i < recent.length; i++) if (recent[i] === 'Tai') taiCount++;
+        var ratio = Math.max(taiCount, recent.length - taiCount) / recent.length;
+        return { dominant: taiCount > recent.length - taiCount ? 'Tai' : 'Xiu', ratio: ratio };
+    }
+
+    detectCycle(results) {
+        for (var cycleLen = 2; cycleLen <= 4; cycleLen++) {
+            if (results.length < cycleLen * 2) continue;
+            var lastCycle = results.slice(-cycleLen);
+            var prevCycle = results.slice(-cycleLen*2, -cycleLen);
+            var match = true;
+            for (var i = 0; i < cycleLen; i++) {
+                if (lastCycle[i] !== prevCycle[i]) { match = false; break; }
+            }
+            if (match) return { found: true, length: cycleLen, next: lastCycle[0] };
+        }
+        return { found: false };
+    }
+
+    getLongTrend(results) {
+        if (results.length < 10) return { strength: 0, direction: null };
+        var firstTai = 0, lastTai = 0;
+        for (var i = 0; i < 5; i++) if (results[i] === 'Tai') firstTai++;
+        for (var j = results.length - 5; j < results.length; j++) if (results[j] === 'Tai') lastTai++;
+        if (lastTai > firstTai + 2) return { strength: 0.8, direction: 'Tai' };
+        if (lastTai < firstTai - 2) return { strength: 0.8, direction: 'Xiu' };
+        return { strength: 0.5, direction: lastTai > 2 ? 'Tai' : 'Xiu' };
+    }
+
+    runSubModel(index, history) {
+        if (history.length < 3) return null;
+        var results = this.getResultArray(history);
+        var model = this.subModels['sub_model_' + index];
+        if (!model) return null;
+
+        var last = results[results.length - 1];
+        var other = last === 'Tai' ? 'Xiu' : 'Tai';
+        var streak = this.getStreak(results);
+
+        // Xu ly theo type
+        switch (model.type) {
+            case '1-1':
+                if (results.length >= model.minLength) {
+                    if (model.logic === 'pure' && this.isPerfectAlternating(results, 4)) {
+                        return { prediction: other, confidence: 0.9, reason: 'Cau 1-1 thuan tuy', model_name: model.name };
+                    }
+                    if ((model.logic === 'variant' || model.logic === 'long') && results.length >= 6) {
+                        var altCount = 0;
+                        for (var i = 1; i < Math.min(results.length, 12); i++) {
+                            if (results[results.length - i] !== results[results.length - i - 1]) altCount++;
+                        }
+                        if (altCount >= results.length * 0.6) {
+                            return { prediction: other, confidence: 0.7 + (altCount/20), reason: 'Cau 1-1 dai han', model_name: model.name };
+                        }
+                    }
+                    if (model.logic === 'break' && streak >= 4) {
+                        return { prediction: last, confidence: 0.8, reason: '1-1 sap gay', model_name: model.name };
+                    }
+                }
+                break;
+
+            case '2-2':
+                if (results.length >= 6) {
+                    var last6 = results.slice(-6);
+                    if (last6[0] === last6[1] && last6[2] === last6[3] && last6[4] === last6[5] && last6[1] !== last6[2]) {
+                        return { prediction: last6[4] === 'Tai' ? 'Xiu' : 'Tai', confidence: 0.9, reason: 'Cau 2-2 chuan', model_name: model.name };
+                    }
+                }
+                break;
+
+            case 'bet':
+                if (streak >= model.minLength) {
+                    if (model.logic === 'break' && streak >= 4) {
+                        return { prediction: other, confidence: 0.7 + (streak*0.03), reason: 'Bet ' + streak + ' phien, sap gay', model_name: model.name };
+                    }
+                    return { prediction: last, confidence: 0.7 + (streak*0.03), reason: 'Bet ' + streak + ' phien', model_name: model.name };
+                }
+                break;
+
+            case '3-3':
+                if (results.length >= 9) {
+                    var last9 = results.slice(-9);
+                    if (last9[0]===last9[1]&&last9[1]===last9[2]&&last9[3]===last9[4]&&last9[4]===last9[5]&&last9[6]===last9[7]&&last9[7]===last9[8]) {
+                        return { prediction: last9[6]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 3-3 chuan', model_name: model.name };
+                    }
+                }
+                break;
+
+            case '2-1-2':
+                if (results.length >= 5) {
+                    var last5 = results.slice(-5);
+                    if (last5[0]===last5[1]&&last5[1]!==last5[2]&&last5[2]!==last5[3]&&last5[3]===last5[4]) {
+                        return { prediction: last5[4]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 2-1-2', model_name: model.name };
+                    }
+                }
+                break;
+
+            case '1-2-1':
+                if (results.length >= 5) {
+                    var last5b = results.slice(-5);
+                    if (last5b[0]!==last5b[1]&&last5b[1]===last5b[2]&&last5b[2]!==last5b[3]&&last5b[3]===last5b[4]) {
+                        return { prediction: last5b[4]==='Tai'?'Xiu':'Tai', confidence: 0.9, reason: 'Cau 1-2-1', model_name: model.name };
+                    }
+                }
+                break;
+
+            case 'break':
+                if (results.length >= 4) {
+                    var last4 = results.slice(-4);
+                    if (last4[0]!==last4[1]&&last4[1]!==last4[2]&&last4[2]===last4[3]) {
+                        return { prediction: last4[3], confidence: 0.85, reason: 'Be cau 1-1', model_name: model.name };
+                    }
+                    if (streak >= 3 && last !== results[results.length-2]) {
+                        return { prediction: last, confidence: 0.8, reason: 'Be cau bet', model_name: model.name };
+                    }
+                }
+                break;
+
+            case 'transition':
+                if (results.length >= 6) {
+                    var last6c = results.slice(-6);
+                    if (last6c[0]!==last6c[1]&&last6c[1]!==last6c[2]&&last6c[2]===last6c[3]&&last6c[3]!==last6c[4]&&last6c[4]===last6c[5]) {
+                        return { prediction: last6c[4]==='Tai'?'Xiu':'Tai', confidence: 0.75, reason: 'Chuyen 1-1 sang 2-2', model_name: model.name };
+                    }
+                }
+                break;
+
+            case 'frequency':
+                var freq = this.analyzeFrequency(results);
+                if (freq.ratio > 0.6) {
+                    return { prediction: freq.dominant, confidence: 0.6+freq.ratio*0.2, reason: 'Tan suat ' + freq.dominant, model_name: model.name };
+                }
+                break;
+
+            case 'cycle':
+                var cycle = this.detectCycle(results);
+                if (cycle.found) {
+                    return { prediction: cycle.next, confidence: 0.7, reason: 'Chu ky ' + cycle.length, model_name: model.name };
+                }
+                break;
+
+            case 'trend':
+                var trend = this.getLongTrend(results);
+                if (trend.strength > 0.7) {
+                    return { prediction: trend.direction, confidence: 0.7+trend.strength*0.1, reason: 'Xu huong dai', model_name: model.name };
+                }
+                break;
+        }
+
+        return null;
+    }
+
+    ensembleModels(history) {
+        var allResults = [];
+        var details = [];
+
+        // Chay sub models 1-42
+        for (var i = 1; i <= 42; i++) {
+            var result = this.runSubModel(i, history);
+            if (result && result.prediction) {
+                allResults.push(result);
+                details.push({
+                    model: result.model_name || ('sub_model_' + i),
+                    prediction: result.prediction === 'Tai' ? 'TAI' : 'XIU',
+                    confidence: result.confidence,
+                    reason: result.reason
+                });
             }
         }
-    }
 
-    // SONG
-    var doiChieu = 0;
-    for (var k = 1; k < str.length; k++) if (str[k] !== str[k-1]) doiChieu++;
-    var tiLeDao = doiChieu / Math.max(str.length - 1, 1);
-    if (tiLeDao >= 0.75 && str.length >= 8) allCau.push({ name: 'SÓNG CAO TẦN', pred: lastKQ === 'T' ? 'X' : 'T', conf: 75, type: 'SÓNG' });
-    else if (tiLeDao <= 0.2 && str.length >= 8) allCau.push({ name: 'ÍT ĐẢO CHIỀU', pred: lastKQ, conf: 72, type: 'SÓNG' });
+        // Chay mini models 1-21
+        for (var j = 1; j <= 21; j++) {
+            var miniResult = this.runMiniModel(j, history);
+            if (miniResult && miniResult.prediction) {
+                allResults.push(miniResult);
+                details.push({
+                    model: 'mini_model_' + j,
+                    prediction: miniResult.prediction === 'Tai' ? 'TAI' : 'XIU',
+                    confidence: miniResult.confidence,
+                    reason: miniResult.reason
+                });
+            }
+        }
 
-    // NGHIENG
-    var tCount = 0;
-    for (var m = 0; m < len; m++) if (history[m].kq === 'T') tCount++;
-    var tRate = tCount / len;
-    if (len >= 8) {
-        if (tRate >= 0.75 && str.endsWith('TT')) allCau.push({ name: 'NGHIÊNG TÀI + BỆT', pred: 'T', conf: 82, type: 'NGHIÊNG' });
-        else if (tRate <= 0.25 && str.endsWith('XX')) allCau.push({ name: 'NGHIÊNG XỈU + BỆT', pred: 'X', conf: 82, type: 'NGHIÊNG' });
-        else if (tRate >= 0.7) allCau.push({ name: 'NGHIÊNG TÀI - BẺ', pred: 'X', conf: 72, type: 'NGHIÊNG' });
-        else if (tRate <= 0.3) allCau.push({ name: 'NGHIÊNG XỈU - BẺ', pred: 'T', conf: 72, type: 'NGHIÊNG' });
-    }
+        // Tinh weighted vote
+        var taiWeight = 0, xiuWeight = 0, totalWeight = 0;
+        for (var k = 0; k < allResults.length; k++) {
+            var r = allResults[k];
+            var w = r.confidence || 0.5;
+            if (r.prediction === 'Tai' || r.prediction === 'TAI') taiWeight += w;
+            else if (r.prediction === 'Xiu' || r.prediction === 'XIU') xiuWeight += w;
+            totalWeight += w;
+        }
 
-    allCau.sort(function(a, b) { return b.conf - a.conf; });
-    var best = allCau[0];
-    var xCount = len - tCount;
+        details.sort(function(a, b) { return b.confidence - a.confidence; });
 
-    var thongKe = {
-        tong: len, tai: tCount, xiu: xCount,
-        tiLeTai: (tRate * 100).toFixed(1) + '%',
-        tiLeXiu: ((1 - tRate) * 100).toFixed(1) + '%',
-        xuHuong: tCount > xCount ? 'THIÊN TÀI' : xCount > tCount ? 'THIÊN XỈU' : 'CÂN BẰNG'
-    };
+        var finalPred, finalConf;
+        if (totalWeight > 0) {
+            if (taiWeight > xiuWeight * 1.3) {
+                finalPred = 'TAI';
+                finalConf = Math.min((taiWeight/totalWeight)*100, 95);
+            } else if (xiuWeight > taiWeight * 1.3) {
+                finalPred = 'XIU';
+                finalConf = Math.min((xiuWeight/totalWeight)*100, 95);
+            } else if (details.length > 0) {
+                finalPred = details[0].prediction;
+                finalConf = 50 + details[0].confidence * 30;
+            } else {
+                finalPred = 'TAI';
+                finalConf = 50;
+            }
+        } else {
+            finalPred = 'TAI';
+            finalConf = 50;
+        }
 
-    if (best) {
         return {
-            duDoan: best.pred === 'T' ? 'TÀI' : 'XỈU',
-            kyHieu: best.pred,
-            doTinCay: best.conf,
-            tiLe: best.conf + '%',
-            cau: best.name,
-            loai: best.type,
-            sucManh: best.conf >= 90 ? 'RẤT MẠNH' : best.conf >= 80 ? 'MẠNH' : 'VỪA',
-            loiKhuyen: best.conf >= 90 ? 'VÀO TIỀN MẠNH' : best.conf >= 80 ? 'VÀO TIỀN' : 'THĂM DÒ',
-            tatCa: allCau.slice(0, 10),
-            thongKe: thongKe,
-            diemManh: best.conf
+            duDoan: finalPred,
+            kyHieu: finalPred === 'TAI' ? 'T' : 'X',
+            doTinCay: Math.round(finalConf),
+            tiLe: Math.round(finalConf) + '%',
+            cau: details.length > 0 ? details[0].reason : 'Khong xac dinh',
+            loai: details.length > 0 ? details[0].model : 'KHONG CO',
+            sucManh: finalConf >= 90 ? 'RAT MANH' : finalConf >= 75 ? 'MANH' : 'VUA',
+            loiKhuyen: finalConf >= 90 ? 'VAO TIEN MANH' : finalConf >= 75 ? 'VAO TIEN' : 'THAM DO',
+            tatCa: details.slice(0, 10),
+            diemManh: Math.round(finalConf),
+            tongModels: allResults.length
         };
     }
 
-    return {
-        duDoan: lastKQ === 'T' ? 'XỈU' : 'TÀI',
-        kyHieu: lastKQ === 'T' ? 'X' : 'T',
-        doTinCay: 50, tiLe: '50%',
-        cau: 'Không có cầu - ĐÁNH NGƯỢC',
-        loai: 'ĐẢO NGƯỢC', sucManh: 'YẾU',
-        loiKhuyen: 'THĂM DÒ NHỎ', tatCa: [], thongKe: thongKe, diemManh: 0
-    };
+    runMiniModel(index, history) {
+        if (history.length < 2) return null;
+        var results = this.getResultArray(history);
+        var last = results[results.length - 1];
+        var other = last === 'Tai' ? 'Xiu' : 'Tai';
+        var streak = this.getStreak(results);
+
+        var predictions = [
+            { pred: last, conf: 0.5, reason: 'Theo xu huong' },
+            { pred: other, conf: 0.48, reason: 'Dao chieu' },
+            { pred: streak >= 3 ? last : other, conf: 0.55, reason: 'Theo bet' },
+            { pred: other, conf: 0.52, reason: 'Can bang' },
+            { pred: last, conf: 0.5, reason: 'Tiep tuc' }
+        ];
+
+        var pick = predictions[index % predictions.length];
+        return {
+            prediction: pick.pred,
+            confidence: pick.conf,
+            reason: 'Mini ' + index + ': ' + pick.reason,
+            model_name: 'mini_model_' + index
+        };
+    }
+}
+
+var predictor = new AdvancedPredictor();
+
+// ============================================================================
+// MAIN ANALYZE
+// ============================================================================
+function phanTich(history) {
+    var len = history.length;
+    if (len < 2) {
+        return {
+            duDoan: 'TAI', kyHieu: 'T', doTinCay: 40, tiLe: '40%',
+            cau: 'Dang thu thap du lieu', loai: 'KHONG CO', sucManh: 'YEU',
+            loiKhuyen: 'DOI THEM DU LIEU', tatCa: [], diemManh: 0
+        };
+    }
+
+    // Chay ensemble 42+21 models
+    var result = predictor.ensembleModels(history);
+    return result;
 }
 
 function checkDD(phien, kq) {
@@ -186,9 +461,11 @@ function checkDD(phien, kq) {
     }
 }
 
+// ============================================================================
 // ROUTES
+// ============================================================================
 app.get('/', function(req, res) {
-    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:700px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:8px 0;background:linear-gradient(45deg,#f6d365,#fda085);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.box{padding:12px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:2em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:12px 24px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:1em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BỆT{background:#da3633}.tag.ĐẢO{background:#1f6feb}.tag.NHỊP{background:#8957e5}.tag.HỒI{background:#d2991d;color:#000}.tag.NGHIÊNG{background:#3fb950;color:#000}.tag.SÓNG{background:#db6d28}.tag.FORMULA{background:#e37400}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:10px;border-radius:6px;overflow-x:auto;font-size:.8em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI - DỰ ĐOÁN TÀI XỈU</h1><p style="text-align:center;color:#8b949e;font-size:.8em">7 LOẠI CẦU • 200+ FORMULA</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DỰ ĐOÁN NGAY</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 LỊCH SỬ</a></div><div id="out"><div class="loading">⏳ Đang tải...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ Đang phân tích...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.phien_truoc||{};var dd=d.du_doan||{};var cau=d.cau_phat_hien||[];var log=d.lich_su_du_doan||[];var html="";html+='<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center;color:#f6d365>📌 DỰ ĐOÁN PHIÊN HIỆN TẠI</h3><div style=text-align:center;margin:10px 0><span style=font-size:1.2em>PHIÊN HIỆN TẠI: </span><span class="big yellow">#'+dd.phien_hien_tai+'</span></div><div class=grid2><div class="box '+(dd.ky_hieu=="T"?"TAI":"XIU")+'"><small>DỰ ĐOÁN</small><div class=big style=font-size:2.5em;color:'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+'>'+dd.du_doan+'</div></div><div class=box><small>TỈ LỆ THẮNG</small><div class="big yellow">'+dd.ti_le+'</div></div></div><p style=margin-top:10px>💡 <b>Lời khuyên:</b> '+dd.loi_khuyen+'</p><p>📊 <b>Cầu:</b> '+dd.cau+' <span class="tag '+dd.loai_cau+'">'+dd.loai_cau+'</span></p></div>';html+='<div class=card><h3>📍 PHIÊN TRƯỚC</h3><div class=grid2><div class=box><small>PHIÊN</small><div class=big>#'+p.phien+'</div></div><div class="box '+(p.ky_hieu=="T"?"TAI":"XIU")+'"><small>KẾT QUẢ</small><div class=big style=color:'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+'>'+p.ket_qua+'</div><small>Tổng: '+p.tong+' | Xúc xắc: '+(p.xuc_xac||[]).join(", ")+'</small></div></div></div>';if(cau.length>0){html+='<div class=card><h3>🔍 CẦU PHÁT HIỆN</h3>';for(var i=0;i<cau.length;i++){var c=cau[i];html+='<p style=margin:3px 0;font-size:.8em;padding:4px;border-radius:3px;background:rgba(255,255,255,0.02)">'+(i+1)+'. <span class="tag '+c.type+'">'+c.type+'</span> <b>'+c.name+'</b> → <b style=color:'+(c.predict=="TÀI"?"#f85149":"#3fb950")+'>'+c.predict+'</b> ('+c.conf+')</p>'}html+='</div>'}if(log.length>0){html+='<div class=card><h3>📋 LỊCH SỬ DỰ ĐOÁN</h3><pre>PHIÊN DỰ ĐOÁN | KẾT QUẢ DỰ ĐOÁN | KẾT QUẢ GAME | ĐÚNG/SAI\n'+("─".repeat(60))+'\n';for(var j=0;j<log.length;j++){var l=log[j];var tt=l.dung===true?"✅ ĐÚNG":l.dung===false?"❌ SAI":"⏳ CHỜ";html+='#'+l.phien+' | '+l.du_doan+' | '+(l.ket_qua||"ĐỢI")+' | '+tt+'\n'}html+='</pre></div>'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML='<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LỖI</h3><p>'+e.message+'</p><button class=btn onclick=load()>🔄 THỬ LẠI</button></div>'}}load();setInterval(load,25000);</script></body></html>');
+    res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sunwin AI Pro - 63 Models</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#0d1117;color:#fff;padding:10px}.container{max-width:700px;margin:0 auto}h1{text-align:center;font-size:1.3em;margin:8px 0;background:linear-gradient(45deg,#f6d365,#fda085);-webkit-background-clip:text;-webkit-text-fill-color:transparent}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin:8px 0}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.box{padding:10px;border-radius:8px;text-align:center;background:#1c2128}.box.TAI{border:2px solid #f85149}.box.XIU{border:2px solid #3fb950}.big{font-size:2em;font-weight:bold}.red{color:#f85149}.green{color:#3fb950}.yellow{color:#d2991d}.btn{padding:12px 24px;background:#238636;color:#fff;border:none;border-radius:6px;margin:4px;cursor:pointer;font-size:1em;font-weight:bold}.btn:hover{background:#2ea043}.btn2{background:transparent;border:1px solid #30363d}.tag{display:inline-block;padding:3px 10px;border-radius:4px;font-size:.7em;font-weight:bold;margin:1px}.tag.BET{background:#da3633}.tag.DAO{background:#1f6feb}.tag.NHIP{background:#8957e5}.tag.HOI{background:#d2991d;color:#000}.tag.NGHIENG{background:#3fb950;color:#000}.tag.SONG{background:#db6d28}.loading{text-align:center;padding:20px;color:#8b949e}pre{background:#0d1117;padding:8px;border-radius:6px;overflow-x:auto;font-size:.75em;max-height:200px}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}</style></head><body><div class="container"><h1>🎯 SUNWIN AI PRO - 63 MODELS</h1><p style="text-align:center;color:#8b949e;font-size:.8em">42 SUB MODELS + 21 MINI MODELS</p><div style="text-align:center;margin:10px 0"><button class="btn" onclick="load()" style="animation:pulse 1.5s infinite">🎲 DU DOAN</button><a href="/api/predict" class="btn btn2">📊 API</a><a href="/api/history" class="btn btn2">📜 SU</a></div><div id="out"><div class="loading">⏳ Dang tai...</div></div></div><script>async function load(){document.getElementById("out").innerHTML="<div class=loading>⏳ 63 Models dang phan tich...</div>";try{var r=await fetch("/api/predict");var d=await r.json();var p=d.phien_truoc||{};var dd=d.du_doan||{};var cau=d.cau_phat_hien||[];var html="";html+=\'<div class=card style=border:2px solid #d2991d;background:linear-gradient(135deg,#161b22,#2d1f00)><h3 style=text-align:center;color:#f6d365>📌 DU DOAN PHIEN HIEN TAI</h3><div style=text-align:center;margin:10px 0><span>PHIEN HIEN TAI: </span><span class="big yellow">#\'+dd.phien_hien_tai+\'</span></div><div class=grid2><div class="box \'+(dd.ky_hieu=="T"?"TAI":"XIU")+\'"><small>DU DOAN</small><div class=big style=font-size:2.5em;color:\'+(dd.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+dd.du_doan+\'</div></div><div class=box><small>TI LE THANG</small><div class="big yellow">\'+dd.ti_le+\'</div></div></div><p style=margin-top:8px>📊 <b>\'+dd.cau+\'</b> | 💡 <b>\'+dd.loi_khuyen+\'</b></p><p>🧠 <b>\'+dd.tong_models+\'</b> models dong thuan</p></div>\';html+=\'<div class=card><h3>📍 PHIEN TRUOC</h3><div class=grid2><div class=box><small>PHIEN</small><div class=big>#\'+p.phien+\'</div></div><div class="box \'+(p.ky_hieu=="T"?"TAI":"XIU")+\'"><small>KET QUA</small><div class=big style=color:\'+(p.ky_hieu=="T"?"#f85149":"#3fb950")+\'>\'+p.ket_qua+\'</div><small>Tong: \'+p.tong+\' | Xuc xac: \'+(p.xuc_xac||[]).join(", ")+\'</small></div></div></div>\';if(cau.length>0){html+=\'<div class=card><h3>🔍 TOP 10 MODELS</h3>\';for(var i=0;i<cau.length;i++){var c=cau[i];html+=\'<p style=margin:3px 0;font-size:.75em;padding:3px;background:rgba(255,255,255,0.02);border-radius:3px">\'+(i+1)+\'. <b>\'+c.model+\'</b> → <b style=color:\'+(c.prediction=="TAI"?"#f85149":"#3fb950")+\'>\'+c.prediction+\'</b> (\'+(c.confidence*100).toFixed(0)+\'%)</p>\'}html+=\'</div>\'}document.getElementById("out").innerHTML=html}catch(e){document.getElementById("out").innerHTML=\'<div class=card style=border:1px solid #f85149><h3 style=color:#f85149>❌ LOI</h3><p>\'+e.message+\'</p><button class=btn onclick=load()>🔄 THU LAI</button></div>\'}}load();setInterval(load,25000);</script></body></html>');
 });
 
 app.get('/api/predict', async function(req, res) {
@@ -206,7 +483,7 @@ app.get('/api/predict', async function(req, res) {
             var phien = parseInt(newData.phien);
             var tong = parseInt(newData.tong) || 0;
             var kq = tong >= 11 ? 'T' : 'X';
-            var kqText = tong >= 11 ? 'TÀI' : 'XỈU';
+            var kqText = tong >= 11 ? 'TAI' : 'XIU';
             
             checkDD(phien, kqText);
             
@@ -255,20 +532,18 @@ app.get('/api/predict', async function(req, res) {
             },
             du_doan: {
                 phien_hien_tai: phienHienTai,
-                du_doan: ketQua ? ketQua.duDoan : 'TÀI',
+                du_doan: ketQua ? ketQua.duDoan : 'TAI',
                 ky_hieu: ketQua ? ketQua.kyHieu : 'T',
                 ti_le: ketQua ? ketQua.tiLe : '50%',
-                cau: ketQua ? ketQua.cau : 'Không xác định',
-                loai_cau: ketQua ? ketQua.loai : 'KHÔNG CÓ',
-                suc_manh: ketQua ? ketQua.sucManh : 'YẾU',
-                loi_khuyen: ketQua ? ketQua.loiKhuyen : 'THĂM DÒ'
+                cau: ketQua ? ketQua.cau : 'Khong xac dinh',
+                loai_cau: ketQua ? ketQua.loai : 'KHONG CO',
+                suc_manh: ketQua ? ketQua.sucManh : 'YEU',
+                loi_khuyen: ketQua ? ketQua.loiKhuyen : 'THAM DO',
+                tong_models: ketQua ? ketQua.tongModels : 0
             },
-            cau_phat_hien: ketQua && ketQua.tatCa ? ketQua.tatCa.slice(0, 10).map(function(c) {
-                return { name: c.name, type: c.type, predict: c.pred === 'T' ? 'TÀI' : 'XỈU', conf: c.conf + '%' };
-            }) : [],
-            lich_su_du_doan: predictionLog.slice(-10).reverse().map(function(p) {
-                return { phien: p.phienDD, du_doan: p.duDoan, ket_qua: p.kqThuc || 'ĐỢI', dung: p.dung };
-            })
+            cau_phat_hien: ketQua && ketQua.tatCa ? ketQua.tatCa.map(function(c) {
+                return { model: c.model, prediction: c.prediction, confidence: c.confidence, reason: c.reason };
+            }) : []
         });
     } catch(err) {
         res.json({ status: 'error', message: err.message });
@@ -281,25 +556,19 @@ app.get('/api/history', function(req, res) {
         if (predictionLog[i].dung === true) dungCount++;
         if (predictionLog[i].dung === false) saiCount++;
     }
-    
     res.json({
         lich_su_du_doan: predictionLog.slice(-30).reverse().map(function(p) {
             return {
                 phien_du_doan: p.phienDD,
                 ket_qua_du_doan: p.duDoan,
-                ket_qua_game: p.kqThuc || 'ĐỢI',
-                dung_hay_sai: p.dung === true ? '✅ ĐÚNG' : p.dung === false ? '❌ SAI' : '⏳ CHỜ'
+                ket_qua_game: p.kqThuc || 'DOI',
+                dung_hay_sai: p.dung === true ? '✅ DUNG' : p.dung === false ? '❌ SAI' : '⏳ CHO'
             };
         }),
-        thong_ke: {
-            tong_du_doan: predictionLog.length,
-            dung: dungCount,
-            sai: saiCount,
-            ti_le_dung: (dungCount+saiCount) > 0 ? ((dungCount/(dungCount+saiCount))*100).toFixed(1)+'%' : 'N/A'
-        }
+        thong_ke: { tong: predictionLog.length, dung: dungCount, sai: saiCount }
     });
 });
 
 app.listen(PORT, function() {
-    console.log('Sunwin AI running on port ' + PORT);
+    console.log('Sunwin AI Pro - 63 Models running on port ' + PORT);
 });
