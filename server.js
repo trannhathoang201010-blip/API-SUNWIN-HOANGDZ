@@ -1,359 +1,365 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
-const API_URL = 'https://sun-win.onrender.com/api/history';
-const DB_PATH = 'cau_database.db';
+// ==================== API NGUỒN ====================
+const API_SUNWIN_TX = 'https://sun-win.onrender.com/api/history';
+const API_SUNWIN_SICBO = 'https://afterwards-motels-honors-vendors.trycloudflare.com/api/sunsicbo';
+const API_HITCLUB = 'https://letting-tackle-newton-oak.trycloudflare.com/api/tx';
+const API_LC79_TX = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/tx';
+const API_LC79_MD5 = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/txmd5';
+const API_BETVIP_TX = 'https://plastic-diet-visits-opens.trycloudflare.com/api/tx';
+const API_BETVIP_MD5 = 'https://plastic-diet-visits-opens.trycloudflare.com/api/txmd5';
+const API_MAX789 = 'https://cage-adjustment-whose-banner.trycloudflare.com/api/tx';
+const API_B52 = 'https://gold-ultra-fails-handles.trycloudflare.com/txmd5';
+const API_BCR = 'https://classic-watching-cup-representatives.trycloudflare.com/api/bcr';
 
-// ==================== SQLITE ====================
-const db = new sqlite3.Database(DB_PATH);
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS learned_patterns (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pattern_hash TEXT UNIQUE,
-        pattern_sequence TEXT,
-        next_result INTEGER,
-        confidence REAL,
-        occurrences INTEGER,
-        last_seen TIMESTAMP,
-        created_at TIMESTAMP
-    )`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_hash ON learned_patterns(pattern_hash)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_confidence ON learned_patterns(confidence DESC)`);
-});
+// Cache lịch sử
+let predictionsDB = {
+    sunwin_tx: [], sunwin_sicbo: [], hitclub: [],
+    lc79_tx: [], lc79_md5: [], betvip_tx: [], betvip_md5: [],
+    max789: [], b52: [], bcr: {}
+};
 
-// ==================== LỚP HỌC CẦU THÔNG MINH ====================
-class CauLearner {
-    constructor(minLen = 3, maxLen = 8) {
-        this.minLen = minLen;
-        this.maxLen = maxLen;
-        this.history = [];
-        this.isLearning = false;
-        this.learnInterval = null;
-        this.learnsPerSecond = 30;
+// ==================== THUẬT TOÁN TÀI XỈU (DÙNG CHUNG) ====================
+function duDoanTaiXiu(history) {
+    let results = history.slice(0, 20).map(h => h.ket_qua_thuc_te).filter(r => r);
+    if (results.length < 2) return { du_doan: 'Tài', do_tin_cay: 55, loai_cau: 'Chưa đủ dữ liệu' };
+    
+    // Bệt
+    let bet = 1;
+    for (let i = 1; i < Math.min(results.length, 10); i++) {
+        if (results[i] === results[0]) bet++;
+        else break;
     }
-
-    addResult(result) { // 0: Xỉu, 1: Tài
-        this.history.push(result);
-        if (this.history.length > 200) this.history.shift();
+    if (bet >= 3) {
+        let conf = Math.min(88, 50 + bet * 4);
+        return { du_doan: results[0], do_tin_cay: conf, loai_cau: `Bệt ${bet} phiên` };
     }
-
-    addResultsBatch(results) { for (let r of results) this.addResult(r); }
-
-    _computePatternHash(pattern) { return `pattern_${pattern.join('_')}`; }
-
-    async _getPatternFromDB(patternHash) {
-        return new Promise((resolve, reject) => {
-            db.get("SELECT * FROM learned_patterns WHERE pattern_hash = ?", [patternHash], (err, row) => {
-                if (err) reject(err);
-                else resolve(row);
-            });
-        });
+    
+    // Đảo 1-1
+    let dao = 1;
+    for (let i = 1; i < Math.min(results.length, 12); i++) {
+        if (results[i] !== results[i-1]) dao++;
+        else break;
     }
-
-    async _savePattern(patternHash, patternSeq, nextResult, confidence) {
-        return new Promise((resolve, reject) => {
-            db.run(`
-                INSERT INTO learned_patterns (pattern_hash, pattern_sequence, next_result, confidence, occurrences, last_seen, created_at)
-                VALUES (?, ?, ?, ?, 1, ?, ?)
-                ON CONFLICT(pattern_hash) DO UPDATE SET
-                    occurrences = occurrences + 1,
-                    confidence = (confidence + excluded.confidence) / 2,
-                    last_seen = excluded.last_seen
-            `, [patternHash, JSON.stringify(patternSeq), nextResult, confidence, new Date().toISOString(), new Date().toISOString()], function(err) {
-                if (err) reject(err);
-                else resolve(this.changes);
-            });
-        });
+    if (dao >= 4) {
+        let pred = results[dao-1] === 'Tài' ? 'Xỉu' : 'Tài';
+        let conf = Math.min(84, 55 + dao * 2);
+        return { du_doan: pred, do_tin_cay: conf, loai_cau: `Đảo ${dao} nhịp` };
     }
-
-    async learn(maxPatterns = 50) {
-        if (this.history.length < this.minLen + 1) return { learned: 0, msg: "Not enough data" };
-        
-        let patterns = [], historyList = [...this.history];
-        for (let len = this.minLen; len <= Math.min(this.maxLen, historyList.length - 1); len++) {
-            for (let i = 0; i <= historyList.length - len - 1; i++) {
-                patterns.push({ seq: historyList.slice(i, i + len), next: historyList[i + len] });
-            }
-        }
-        
-        let uniqueMap = new Map();
-        for (let p of patterns) {
-            let hash = this._computePatternHash(p.seq);
-            if (!uniqueMap.has(hash)) uniqueMap.set(hash, { seq: p.seq, next: p.next });
-        }
-        
-        let uniquePatterns = Array.from(uniqueMap.values());
-        let limited = uniquePatterns.slice(0, Math.min(maxPatterns, uniquePatterns.length));
-        let newCount = 0, updateCount = 0;
-        
-        for (let p of limited) {
-            let hash = this._computePatternHash(p.seq);
-            let confidence = this._calculateConfidence(p.seq, p.next, patterns);
-            let existing = await this._getPatternFromDB(hash);
-            if (existing) updateCount++;
-            else newCount++;
-            await this._savePattern(hash, p.seq, p.next, confidence);
-        }
-        
-        return { learned: limited.length, new: newCount, updated: updateCount, total: await this.getTotalPatterns() };
-    }
-
-    _calculateConfidence(patternSeq, targetNext, allPatterns) {
-        let total = 0, correct = 0;
-        for (let p of allPatterns) {
-            if (JSON.stringify(p.seq) === JSON.stringify(patternSeq)) {
-                total++;
-                if (p.next === targetNext) correct++;
-            }
-        }
-        return total === 0 ? 0 : correct / total;
-    }
-
-    async getTotalPatterns() {
-        return new Promise((resolve) => { db.get("SELECT COUNT(*) as total FROM learned_patterns", (err, row) => { resolve(row ? row.total : 0); }); });
-    }
-
-    async getTopPatterns(limit = 50, minConfidence = 0.6) {
-        return new Promise((resolve) => {
-            db.all(`SELECT pattern_hash, pattern_sequence, next_result, confidence, occurrences, last_seen FROM learned_patterns WHERE confidence >= ? ORDER BY confidence DESC, occurrences DESC LIMIT ?`, [minConfidence, limit], (err, rows) => {
-                if (err) resolve([]);
-                else resolve(rows.map(r => ({ pattern_sequence: JSON.parse(r.pattern_sequence), next_result: r.next_result, confidence: r.confidence, occurrences: r.occurrences })));
-            });
-        });
-    }
-
-    async getStats() {
-        return new Promise((resolve) => {
-            db.get("SELECT COUNT(*) as total, AVG(confidence) as avgConf, AVG(occurrences) as avgOcc FROM learned_patterns", (err, row) => {
-                resolve({ total_patterns: row ? row.total : 0, avg_confidence: row ? (row.avgConf || 0).toFixed(4) : 0, avg_occurrences: row ? (row.avgOcc || 0).toFixed(2) : 0 });
-            });
-        });
-    }
-
-    async predict(currentSeq) {
-        if (currentSeq.length < this.minLen) return { prediction: null, confidence: 0, message: `Need at least ${this.minLen} results` };
-        let bestMatch = null, bestConf = 0, bestPattern = null;
-        for (let len = Math.min(this.maxLen, currentSeq.length); len >= this.minLen; len--) {
-            let searchPattern = currentSeq.slice(-len);
-            let patternData = await this._getPatternFromDB(this._computePatternHash(searchPattern));
-            if (patternData && patternData.confidence > bestConf) {
-                bestConf = patternData.confidence;
-                bestMatch = patternData.next_result;
-                bestPattern = searchPattern;
-            }
-        }
-        if (bestMatch !== null && bestConf >= 0.6) return { prediction: bestMatch, prediction_name: bestMatch === 1 ? 'Tài' : 'Xỉu', confidence: bestConf, matched_pattern: bestPattern, message: 'Prediction successful' };
-        return { prediction: null, confidence: bestConf, message: 'No confident pattern found' };
-    }
-
-    startAutoLearn(learnsPerSecond = 30) {
-        if (this.isLearning) return { status: "already running" };
-        this.learnsPerSecond = Math.max(5, Math.min(50, learnsPerSecond));
-        this.isLearning = true;
-        let intervalMs = 1000 / this.learnsPerSecond;
-        this.learnInterval = setInterval(async () => { if (this.history.length >= this.minLen + 1) await this.learn(this.learnsPerSecond); }, intervalMs);
-        return { status: "started", learns_per_second: this.learnsPerSecond };
-    }
-
-    stopAutoLearn() { if (this.learnInterval) clearInterval(this.learnInterval); this.learnInterval = null; this.isLearning = false; return { status: "stopped" }; }
+    
+    // Xu hướng 3 phiên
+    let last3 = results.slice(0, 3);
+    let tai3 = last3.filter(r => r === 'Tài').length;
+    let pred = tai3 >= 2 ? 'Tài' : 'Xỉu';
+    return { du_doan: pred, do_tin_cay: 62, loai_cau: `Xu hướng ${tai3}T-${3-tai3}X` };
 }
 
-// ==================== 11+ DẠNG CẦU CỔ ĐIỂN ====================
-function nhanDangCau(results) {
-    if (results.length < 3) return { type: 'QUAN_SAT', action: 'KHONG_CUOC', message: 'Đang quan sát (cần ít nhất 3 ván)', confidence: 0 };
-    
-    let last4 = results.slice(-4);
-    let last5 = results.slice(-5);
-    let last6 = results.slice(-6);
-    let last8 = results.slice(-8);
-    let last10 = results.slice(-10);
-    
-    // 1. Cầu Bệt (4+ ván giống nhau)
-    if (last4[0] === last4[1] && last4[1] === last4[2] && last4[2] === last4[3]) {
-        let betLen = 4;
-        for (let i = 4; i < results.length; i++) if (results[i] === results[0]) betLen++; else break;
-        return { type: 'BET', prediction: results[0], action: 'THEO_DUOI', message: `🔴 Cầu Bệt ${betLen} phiên ${results[0]} – Theo đuôi`, confidence: 70 + Math.min(15, betLen) };
-    }
-    
-    // 2. Cầu 1-1 (đan xen)
-    let is11 = true;
-    for (let i = 1; i < 5; i++) if (last5[i] === last5[i-1]) { is11 = false; break; }
-    if (is11 && last5.length === 5) {
-        return { type: 'DAO_11', prediction: last5[4] === 'Tài' ? 'Xỉu' : 'Tài', action: 'BE_CAU', message: '🟡 Cầu 1-1 – Bẻ cầu, đặt ngược lại', confidence: 75 };
-    }
-    
-    // 3. Cầu 2-2
-    if (last6.length >= 6 && last6[0] === last6[1] && last6[2] === last6[3] && last6[4] === last6[5] && last6[0] !== last6[2]) {
-        let pred = last6[2] === 'Tài' ? 'Xỉu' : 'Tài';
-        return { type: 'CAU_22', prediction: pred, action: 'THEO_CAP', message: `🟢 Cầu 2-2 – Theo cặp, đặt ${pred}`, confidence: 78 };
-    }
-    
-    // 4. Cầu 3-2-1
-    if (last6.length === 6 && last6[0] === last6[1] && last6[1] === last6[2] && last6[3] === last6[4] && last6[0] !== last6[3] && last6[5] === last6[0]) {
-        return { type: 'CAU_321', prediction: 'Xỉu', action: 'THEO_NHIP', message: '📊 Cầu 3-2-1 (T T T X X T) – Theo nhịp giảm dần', confidence: 76 };
-    }
-    if (last6.length === 6 && last6[0] !== 'Tài' && last6[1] !== 'Tài' && last6[2] !== 'Tài' && last6[3] === 'Tài' && last6[4] === 'Tài' && last6[5] !== 'Tài') {
-        return { type: 'CAU_321', prediction: 'Tài', action: 'THEO_NHIP', message: '📊 Cầu 3-2-1 (X X X T T X) – Theo nhịp giảm', confidence: 76 };
-    }
-    
-    // 5. Cầu 1-2-3
-    if (last6.length === 6 && last6[0] !== last6[1] && last6[1] === last6[2] && last6[2] !== last6[3] && last6[3] === last6[4] && last6[4] === last6[5]) {
-        return { type: 'CAU_123', prediction: 'Xỉu', action: 'THEO_TIEN', message: '📈 Cầu 1-2-3 (T X X T T T) – Vào tiền tăng dần', confidence: 80 };
-    }
-    if (last6.length === 6 && last6[0] !== 'Tài' && last6[1] === 'Tài' && last6[2] === 'Tài' && last6[3] !== 'Tài' && last6[4] !== 'Tài' && last6[5] !== 'Tài') {
-        return { type: 'CAU_123', prediction: 'Tài', action: 'THEO_TIEN', message: '📈 Cầu 1-2-3 (X T T X X X) – Vào tiền tăng dần', confidence: 80 };
-    }
-    
-    // 6. Cầu 3-3
-    if (last8.length >= 9 && last8[0]===last8[1] && last8[1]===last8[2] && last8[3]===last8[4] && last8[4]===last8[5] && last8[6]===last8[7] && last8[7]===last8[8] && last8[0]!==last8[3] && last8[3]!==last8[6]) {
-        let pred = last8[6] === 'Tài' ? 'Xỉu' : 'Tài';
-        return { type: 'CAU_33', prediction: pred, action: 'THAN_TRONG', message: '🟣 Cầu 3-3 – Rủi ro cao, chỉ đánh khi chắc chắn', confidence: 72 };
-    }
-    
-    // 7. Cầu 4-2-4
-    if (last10.length >= 10 && last10[0]===last10[1] && last10[1]===last10[2] && last10[2]===last10[3] && last10[4]===last10[5] && last10[6]===last10[7] && last10[7]===last10[8] && last10[8]===last10[9] && last10[0]!==last10[4] && last10[4]!==last10[6]) {
-        let pred = last10[6] === 'Tài' ? 'Xỉu' : 'Tài';
-        return { type: 'CAU_424', prediction: pred, action: 'THAN_TRONG', message: '📐 Cầu 4-2-4 (chữ A) – Rủi ro cao', confidence: 70 };
-    }
-    
-    // 8. Cầu 2-1-2
-    if (last6.length === 6 && last6[0] === last6[1] && last6[1] !== last6[2] && last6[2] === last6[3] && last6[3] === last6[4] && last6[4] !== last6[5]) {
-        let pred = last6[0] === 'Tài' ? 'Xỉu' : 'Tài';
-        return { type: 'CAU_212', prediction: pred, action: 'THAN_TRONG', message: '🔁 Cầu 2-1-2 – Chu kỳ ngắn, rủi ro', confidence: 72 };
-    }
-    
-    // 9. Cầu 5-5 (siêu bệt)
-    if (results.length >= 10 && results.slice(0,5).every(r => r === results[0]) && results.slice(5,10).every(r => r === results[5]) && results[0] !== results[5]) {
-        return { type: 'CAU_55', action: 'KHONG_CUOC', message: '⚠️ Cầu 5-5 (siêu bệt) – RẤT HIẾM, khuyên BỎ QUA', confidence: 50 };
-    }
-    
-    // 10. Cầu rối (Zigzag)
-    return { type: 'ZIGZAG', action: 'KHONG_CUOC', message: '🌀 Cầu rối (Zigzag) – KHÔNG ĐẶT CƯỢC, chờ cầu mới', confidence: 0 };
-}
-
-// ==================== TÍCH HỢP CHÍNH ====================
-let predictionsDB = [];
-let cauLearner = new CauLearner(3, 8);
-cauLearner.startAutoLearn(30);
-
-async function fetchCurrentGame() {
+// ==================== FETCH DỮ LIỆU ====================
+async function fetchGame(url, type) {
     try {
-        const res = await axios.get(API_URL, { timeout: 8000 });
-        if (res.data && res.data.taixiu && res.data.taixiu.length > 0) {
-            const lastItem = res.data.taixiu[0];
-            let ketQua = lastItem.Ket_qua === 'Tài' ? 'Tài' : 'Xỉu';
-            return { phien: lastItem.Phien, ket_qua: ketQua, tong: lastItem.Tong, numeric: ketQua === 'Tài' ? 1 : 0 };
+        const res = await axios.get(url, { timeout: 8000 });
+        if (type === 'sunwin_tx' && res.data?.taixiu) {
+            let last = res.data.taixiu[0];
+            return { phien: last.Phien, ket_qua: last.Ket_qua === 'Tài' ? 'Tài' : 'Xỉu', tong: last.Tong };
+        }
+        if ((type === 'taixiu_single' || type === 'lc79' || type === 'betvip' || type === 'max789') && res.data?.ket_qua) {
+            let ketQua = res.data.ket_qua === 'Tài' || res.data.ket_qua === 'TAI' ? 'Tài' : 'Xỉu';
+            return { phien: res.data.phien, ket_qua: ketQua, tong: res.data.tong };
+        }
+        if (type === 'b52' && res.data?.ket_qua) {
+            let ketQua = res.data.ket_qua === 'tài' ? 'Tài' : 'Xỉu';
+            return { phien: res.data.phien, ket_qua: ketQua, tong: res.data.tong };
+        }
+        if (type === 'sicbo' && res.data?.ket_qua) {
+            let ketQua = res.data.ket_qua === 'Tài' ? 'Tài' : 'Xỉu';
+            return { phien: parseInt(res.data.phien.replace('#', '')), ket_qua: ketQua, tong: res.data.tong, x1: res.data.xuc_xac_1, x2: res.data.xuc_xac_2, x3: res.data.xuc_xac_3 };
+        }
+        if (type === 'bcr' && res.data?.data) {
+            let bans = {};
+            for (let ban of res.data.data) {
+                if (!bans[ban.ban]) bans[ban.ban] = '';
+                if (ban.results) bans[ban.ban] += ban.results;
+            }
+            return { bans };
         }
         return null;
-    } catch(e) { console.log('Fetch error:', e.message); return null; }
+    } catch(e) { return null; }
 }
 
-// ==================== API DỰ ĐOÁN ====================
-app.get('/sun', async (req, res) => {
+// ==================== SUNWIN TÀI XỈU ====================
+app.get('/sunwin/tx', async (req, res) => {
     try {
-        const current = await fetchCurrentGame();
-        if (!current) return res.status(503).json({ error: 'Cannot connect to game API' });
+        const data = await fetchGame(API_SUNWIN_TX, 'sunwin_tx');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.sunwin_tx);
+        predictionsDB.sunwin_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Sunwin Tài Xỉu', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== SUNWIN SICBO (Tài Xỉu + Vị) ====================
+app.get('/sunwin/sicbo', async (req, res) => {
+    try {
+        const data = await fetchGame(API_SUNWIN_SICBO, 'sicbo');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
         
-        cauLearner.addResult(current.numeric);
+        // Phân tích vị dựa trên tổng điểm
+        let tong = data.tong;
+        let duDoan = tong >= 11 ? 'Tài' : 'Xỉu';
+        let doTinCay = 75;
+        let viGiai = [];
         
-        // Cập nhật kết quả cho dự đoán cũ
-        let oldPred = predictionsDB.find(p => p.phien_du_doan === current.phien);
-        if (oldPred && !oldPred.ket_qua_thuc_te) {
-            oldPred.ket_qua_thuc_te = current.ket_qua;
-            oldPred.dung_sai = (oldPred.du_doan === current.ket_qua) ? '✅' : '❌';
-        }
-        
-        // Lấy lịch sử kết quả thực tế
-        let numericHistory = predictionsDB.filter(p => p.ket_qua_thuc_te).slice(0, 30).map(p => p.ket_qua_thuc_te === 'Tài' ? 1 : 0);
-        let cau = nhanDangCau(numericHistory.map(v => v === 1 ? 'Tài' : 'Xỉu'));
-        let aiPrediction = numericHistory.length >= 3 ? await cauLearner.predict(numericHistory) : { prediction: null, confidence: 0 };
-        
-        let finalPrediction = '';
-        let finalConfidence = 0;
-        let phanTich = '';
-        
-        if (aiPrediction.prediction !== null && aiPrediction.confidence >= 0.65) {
-            finalPrediction = aiPrediction.prediction === 1 ? 'Tài' : 'Xỉu';
-            finalConfidence = Math.floor(aiPrediction.confidence * 100);
-            phanTich = `🧠 AI học pattern [${aiPrediction.matched_pattern?.join(', ')}] ➜ ${finalPrediction} (${finalConfidence}%)`;
-        } else if (cau.action !== 'KHONG_CUOC') {
-            finalPrediction = cau.prediction;
-            finalConfidence = cau.confidence;
-            phanTich = cau.message;
+        if (tong >= 11) {
+            if (tong === 11) viGiai.push('3-4-4, 2-4-5');
+            else if (tong === 12) viGiai.push('3-4-5, 2-5-5, 4-4-4');
+            else if (tong === 13) viGiai.push('4-4-5, 3-5-5, 3-4-6');
+            else if (tong === 14) viGiai.push('4-5-5, 4-4-6, 2-6-6');
+            else if (tong === 15) viGiai.push('5-5-5, 3-6-6, 4-5-6');
+            else if (tong === 16) viGiai.push('5-5-6, 4-6-6');
+            else if (tong === 17) viGiai.push('5-6-6');
+            else if (tong === 18) viGiai.push('6-6-6');
         } else {
-            finalPrediction = numericHistory.length ? (numericHistory[numericHistory.length-1] === 1 ? 'Tài' : 'Xỉu') : 'Tài';
-            finalConfidence = 60;
-            phanTich = cau.message;
+            if (tong === 4) viGiai.push('1-1-2');
+            else if (tong === 5) viGiai.push('1-1-3, 1-2-2');
+            else if (tong === 6) viGiai.push('1-1-4, 1-2-3, 2-2-2');
+            else if (tong === 7) viGiai.push('1-1-5, 1-2-4, 1-3-3, 2-2-3');
+            else if (tong === 8) viGiai.push('1-1-6, 1-2-5, 1-3-4, 2-2-4, 2-3-3');
+            else if (tong === 9) viGiai.push('1-2-6, 1-3-5, 1-4-4, 2-2-5, 2-3-4, 3-3-3');
+            else if (tong === 10) viGiai.push('1-3-6, 1-4-5, 2-2-6, 2-3-5, 2-4-4, 3-3-4');
         }
-        
-        // Lưu dự đoán mới (chỉ 1 lần/phiên)
-        let phienHienTai = current.phien + 1;
-        let existingPred = predictionsDB.find(p => p.phien_du_doan === phienHienTai);
-        if (!existingPred) {
-            predictionsDB.unshift({
-                phien_du_doan: phienHienTai,
-                du_doan: finalPrediction,
-                ket_qua_thuc_te: null,
-                dung_sai: null,
-                timestamp: new Date().toISOString()
-            });
-            if (predictionsDB.length > 100) predictionsDB = predictionsDB.slice(0,100);
-        }
-        
-        let resolved = predictionsDB.filter(p => p.ket_qua_thuc_te);
-        let dung = resolved.filter(p => p.dung_sai === '✅').length;
-        let topPatterns = await cauLearner.getTopPatterns(5);
         
         res.json({
-            success: true,
-            phiên_trước: current.phien,
-            kết_quả_trước: current.ket_qua,
-            phân_tích_cầu: phanTich,
-            dự_đoán: finalPrediction,
-            độ_tin_cậy: finalConfidence + '%',
-            phiên_hiện_tại: phienHienTai,
-            AI_pattern: aiPrediction.prediction !== null ? { matched: aiPrediction.matched_pattern, confidence: (aiPrediction.confidence*100).toFixed(1)+'%' } : 'Chưa có',
-            thống_kê: { tổng_dự_đoán: predictionsDB.length, đã_có_kết_quả: resolved.length, đúng: dung, tỉ_lệ_đúng: resolved.length ? ((dung/resolved.length)*100).toFixed(1)+'%' : '0%' },
-            top_patterns: topPatterns.map(p => ({ pattern: p.pattern_sequence.map(v=>v===1?'T':'X').join(''), next: p.next_result===1?'Tài':'Xỉu', confidence: (p.confidence*100).toFixed(1)+'%', đã_gặp: p.occurrences+' lần' })),
+            game: 'Sunwin Sicbo',
+            phien_hien_tai: data.phien + 1,
+            du_doan: duDoan,
+            do_tin_cay: doTinCay + '%',
+            tong_diem: tong,
+            vi_du_doan: viGiai.join(', '),
+            ket_qua_truoc: data.ket_qua,
             id: '@tranhoang2286'
         });
-    } catch(err) { console.error(err); res.status(500).json({ error: 'Server error: ' + err.message }); }
+    } catch(e) {
+        res.json({ game: 'Sunwin Sicbo', du_doan: 'Tài', do_tin_cay: '65%', vi_du_doan: '11,12,13,14', id: '@tranhoang2286' });
+    }
 });
 
-app.get('/sun/lichsu', (req, res) => {
-    res.json({ game: 'SUNWIN Tài Xỉu', tổng_số: predictionsDB.length, lịch_sử: predictionsDB.map(h => ({ phiên_dự_đoán: h.phien_du_doan, dự_đoán: h.du_doan, kết_quả_thực_tế: h.ket_qua_thuc_te || '⏳ Chờ', đúng_sai: h.dung_sai || '⏳' })), id: '@tranhoang2286' });
+// ==================== HITCLUB ====================
+app.get('/hitclub', async (req, res) => {
+    try {
+        const data = await fetchGame(API_HITCLUB, 'taixiu_single');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.hitclub);
+        predictionsDB.hitclub.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Hitclub', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/sun/ai-stats', async (req, res) => {
-    let stats = await cauLearner.getStats();
-    let top = await cauLearner.getTopPatterns(10);
-    res.json({ success: true, stats, top_patterns: top.map(p => ({ pattern: p.pattern_sequence.map(v=>v===1?'T':'X').join(''), next: p.next_result===1?'Tài':'Xỉu', confidence: (p.confidence*100).toFixed(1)+'%', occurrences: p.occurrences })), id: '@tranhoang2286' });
+// ==================== LC79 HŨ ====================
+app.get('/lc79/tx', async (req, res) => {
+    try {
+        const data = await fetchGame(API_LC79_TX, 'lc79');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.lc79_tx);
+        predictionsDB.lc79_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'LC79 Hũ', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ==================== LC79 MD5 ====================
+app.get('/lc79/md5', async (req, res) => {
+    try {
+        const data = await fetchGame(API_LC79_MD5, 'lc79');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.lc79_md5);
+        predictionsDB.lc79_md5.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'LC79 MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== BETVIP HŨ ====================
+app.get('/betvip/tx', async (req, res) => {
+    try {
+        const data = await fetchGame(API_BETVIP_TX, 'betvip');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.betvip_tx);
+        predictionsDB.betvip_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Betvip Hũ', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== BETVIP MD5 ====================
+app.get('/betvip/md5', async (req, res) => {
+    try {
+        const data = await fetchGame(API_BETVIP_MD5, 'betvip');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.betvip_md5);
+        predictionsDB.betvip_md5.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Betvip MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== MAX789 ====================
+app.get('/max789', async (req, res) => {
+    try {
+        const data = await fetchGame(API_MAX789, 'max789');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.max789);
+        predictionsDB.max789.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Max789', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== B52 MD5 ====================
+app.get('/b52', async (req, res) => {
+    try {
+        const data = await fetchGame(API_B52, 'b52');
+        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
+        let pred = duDoanTaiXiu(predictionsDB.b52);
+        predictionsDB.b52.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'B52 MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== BCR - DANH SÁCH BÀN ====================
+app.get('/bcr/bans', async (req, res) => {
+    try {
+        const data = await fetchGame(API_BCR, 'bcr');
+        if (!data?.bans) return res.status(503).json({ error: 'Cannot fetch BCR data' });
+        let banList = Object.keys(data.bans).sort();
+        res.json({ success: true, total_bans: banList.length, bans: banList, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== BCR - DỰ ĐOÁN 1 BÀN ====================
+app.get('/bcr/ban/:banId', async (req, res) => {
+    try {
+        const banId = req.params.banId;
+        const data = await fetchGame(API_BCR, 'bcr');
+        if (!data?.bans || !data.bans[banId]) return res.status(404).json({ error: `Ban ${banId} not found` });
+        
+        let resultsStr = data.bans[banId];
+        let lastResult = resultsStr.length > 0 ? resultsStr[resultsStr.length - 1] : '?';
+        let bCount = (resultsStr.match(/B/g) || []).length;
+        let pCount = (resultsStr.match(/P/g) || []).length;
+        let tCount = (resultsStr.match(/T/g) || []).length;
+        
+        // Dự đoán Con/Cái
+        let duDoanConCai = 'Con', doTinCayConCai = 60, lyDoConCai = 'Theo xu hướng';
+        if (resultsStr.length >= 3) {
+            let bet = 1;
+            for (let i = resultsStr.length - 2; i >= 0; i--) {
+                if (resultsStr[i] === lastResult) bet++;
+                else break;
+            }
+            if (bet >= 3) {
+                duDoanConCai = lastResult === 'B' ? 'Con' : 'Cái';
+                doTinCayConCai = Math.min(85, 55 + bet * 4);
+                lyDoConCai = `Bệt ${bet} ván ${duDoanConCai}`;
+            } else {
+                let dao = 1;
+                for (let i = resultsStr.length - 2; i >= 0; i--) {
+                    if (resultsStr[i] !== resultsStr[i+1]) dao++;
+                    else break;
+                }
+                if (dao >= 4) {
+                    duDoanConCai = lastResult === 'B' ? 'Cái' : 'Con';
+                    doTinCayConCai = Math.min(82, 58 + dao * 2);
+                    lyDoConCai = `Đảo ${dao} ván → ${duDoanConCai}`;
+                }
+            }
+        }
+        
+        // Dự đoán Hòa
+        let duDoanHoa = 'Không', doTinCayHoa = 85, lyDoHoa = 'Hòa hiếm';
+        if (tCount >= 2 && resultsStr.slice(-5).includes('T')) {
+            duDoanHoa = 'Có';
+            doTinCayHoa = 65;
+            lyDoHoa = `Hòa xuất hiện ${tCount} lần`;
+        }
+        
+        // Dự đoán Con Đôi (BB)
+        let duDoanConDoi = 'Không', doTinCayConDoi = 85, lyDoConDoi = 'Con đôi hiếm';
+        if (resultsStr.slice(-2) === 'BB') {
+            duDoanConDoi = 'Có';
+            doTinCayConDoi = 70;
+            lyDoConDoi = 'Ván trước có BB';
+        }
+        
+        // Dự đoán Cái Đôi (PP)
+        let duDoanCaiDoi = 'Không', doTinCayCaiDoi = 85, lyDoCaiDoi = 'Cái đôi hiếm';
+        if (resultsStr.slice(-2) === 'PP') {
+            duDoanCaiDoi = 'Có';
+            doTinCayCaiDoi = 70;
+            lyDoCaiDoi = 'Ván trước có PP';
+        }
+        
+        res.json({
+            game: 'BCR Sexy', ban: banId,
+            du_doan_con_cai: duDoanConCai, do_tin_cay_con_cai: doTinCayConCai + '%', ly_do_con_cai: lyDoConCai,
+            du_doan_hoa: duDoanHoa, do_tin_cay_hoa: doTinCayHoa + '%', ly_do_hoa: lyDoHoa,
+            du_doan_con_doi: duDoanConDoi, do_tin_cay_con_doi: doTinCayConDoi + '%', ly_do_con_doi: lyDoConDoi,
+            du_doan_cai_doi: duDoanCaiDoi, do_tin_cay_cai_doi: doTinCayCaiDoi + '%', ly_do_cai_doi: lyDoCaiDoi,
+            thong_ke: { tong_van: resultsStr.length, con: bCount, cai: pCount, hoa: tCount },
+            id: '@tranhoang2286'
+        });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== BCR - TẤT CẢ BÀN ====================
+app.get('/bcr/all', async (req, res) => {
+    try {
+        const data = await fetchGame(API_BCR, 'bcr');
+        if (!data?.bans) return res.status(503).json({ error: 'Cannot fetch BCR data' });
+        let all = {};
+        for (let [banId, resultsStr] of Object.entries(data.bans)) {
+            let lastResult = resultsStr.length > 0 ? resultsStr[resultsStr.length - 1] : '?';
+            let bet = 1;
+            for (let i = resultsStr.length - 2; i >= 0; i--) {
+                if (resultsStr[i] === lastResult) bet++;
+                else break;
+            }
+            let duDoan = (bet >= 3 && lastResult === 'B') ? 'Con' : ((bet >= 3 && lastResult === 'P') ? 'Cái' : (lastResult === 'B' ? 'Cái' : 'Con'));
+            let doTinCay = bet >= 3 ? Math.min(85, 55 + bet * 4) : 62;
+            all[banId] = { du_doan: duDoan, do_tin_cay: doTinCay + '%' };
+        }
+        res.json({ game: 'BCR Sexy', all_bans: all, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== LỊCH SỬ (Cho Sunwin Tài Xỉu) ====================
+app.get('/sunwin/lichsu', (req, res) => {
+    res.json({ game: 'Sunwin Tài Xỉu', lich_su: predictionsDB.sunwin_tx.slice(0, 20), id: '@tranhoang2286' });
+});
+
+// ==================== RESET ====================
 app.post('/reset', (req, res) => {
-    predictionsDB = [];
-    res.json({ success: true, message: 'Reset complete', id: '@tranhoang2286' });
+    for (let k of Object.keys(predictionsDB)) predictionsDB[k] = [];
+    res.json({ success: true, message: 'Reset all history', id: '@tranhoang2286' });
 });
 
+// ==================== ROOT ====================
 app.get('/', (req, res) => {
     res.json({
-        name: 'SUNWIN Tài Xỉu Pro (Không vốn - Chỉ dự đoán)',
-        version: 'ULTIMATE',
+        name: 'TỔNG HỢP API TÀI XỈU - BCR - SICBO',
         author: '@tranhoang2286',
-        endpoints: { dự_đoán: 'GET /sun', lịch_sử: 'GET /sun/lichsu', AI_stats: 'GET /sun/ai-stats', reset: 'POST /reset' }
+        endpoints: {
+            'Sunwin Tài Xỉu': '/sunwin/tx', 'Sunwin Sicbo': '/sunwin/sicbo', 'Hitclub': '/hitclub',
+            'LC79 Hũ': '/lc79/tx', 'LC79 MD5': '/lc79/md5', 'Betvip Hũ': '/betvip/tx', 'Betvip MD5': '/betvip/md5',
+            'Max789': '/max789', 'B52 MD5': '/b52', 'BCR Danh sách bàn': '/bcr/bans',
+            'BCR 1 bàn': '/bcr/ban/:banId', 'BCR Tất cả': '/bcr/all', 'Lịch sử Sunwin': '/sunwin/lichsu'
+        }
     });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 SUNWIN API - THUẬT TOÁN DỰ ĐOÁN THUẦN TÚY`);
+    console.log(`\n🚀 SERVER TỔNG HỢP - ${Object.keys(predictionsDB).length} GAME`);
     console.log(`📡 PORT: ${PORT}`);
-    console.log(`✅ 9+ dạng cầu + AI học pattern`);
-    console.log(`📌 /sun - Dự đoán tối ưu - KHÔNG CÓ VỐN, KHÔNG CƯỢC`);
+    console.log(`✅ Sunwin | Hitclub | LC79 | Betvip | Max789 | B52 | BCR | Sicbo`);
 });
