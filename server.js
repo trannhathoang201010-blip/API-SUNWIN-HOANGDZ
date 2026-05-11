@@ -8,7 +8,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
 // ==================== API NGUỒN ====================
-const API_SUNWIN_TX = 'https://sun-win.onrender.com/api/history';
+const API_SUNWIN_TX = 'https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx';
 const API_SUNWIN_SICBO = 'https://afterwards-motels-honors-vendors.trycloudflare.com/api/sunsicbo';
 const API_HITCLUB = 'https://letting-tackle-newton-oak.trycloudflare.com/api/tx';
 const API_LC79_TX = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/tx';
