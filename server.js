@@ -9,7 +9,6 @@ const PORT = process.env.PORT || 5000;
 
 // ==================== API NGUỒN ====================
 const API_SUNWIN_TX = 'https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx';
-const API_SUNWIN_SICBO = 'https://afterwards-motels-honors-vendors.trycloudflare.com/api/sunsicbo';
 const API_HITCLUB = 'https://letting-tackle-newton-oak.trycloudflare.com/api/tx';
 const API_LC79_TX = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/tx';
 const API_LC79_MD5 = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/txmd5';
@@ -18,244 +17,200 @@ const API_BETVIP_MD5 = 'https://plastic-diet-visits-opens.trycloudflare.com/api/
 const API_MAX789 = 'https://cage-adjustment-whose-banner.trycloudflare.com/api/tx';
 const API_B52 = 'https://gold-ultra-fails-handles.trycloudflare.com/txmd5';
 const API_BCR = 'https://classic-watching-cup-representatives.trycloudflare.com/api/bcr';
+const API_XOCDIA88_TX = 'https://taixiu.system32-cloudfare-356783752985678522.monster/api/luckydice/GetSoiCau';
+const API_XOCDIA88_MD5 = 'https://taixiumd5.system32-cloudfare-356783752985678522.monster/api/md5luckydice/GetSoiCau';
 
 // Cache lịch sử
 let predictionsDB = {
-    sunwin_tx: [], sunwin_sicbo: [], hitclub: [],
-    lc79_tx: [], lc79_md5: [], betvip_tx: [], betvip_md5: [],
-    max789: [], b52: [], bcr: {}
+    sunwin_tx: [], hitclub: [], lc79_tx: [], lc79_md5: [],
+    betvip_tx: [], betvip_md5: [], max789: [], b52: [],
+    xocdia88_tx: [], xocdia88_md5: []
 };
 
-// ==================== THUẬT TOÁN TÀI XỈU (DÙNG CHUNG) ====================
-function duDoanTaiXiu(history) {
-    let results = history.slice(0, 20).map(h => h.ket_qua_thuc_te).filter(r => r);
-    if (results.length < 2) return { du_doan: 'Tài', do_tin_cay: 55, loai_cau: 'Chưa đủ dữ liệu' };
+// ==================== 9 DẠNG CẦU TÀI XỈU ====================
+function nhanDangCau(results) {
+    if (results.length < 3) return { type: 'QUAN_SAT', action: 'THEO_XU_HUONG', message: 'Đang quan sát (cần ít nhất 3 ván)', confidence: 55 };
     
-    // Bệt
-    let bet = 1;
-    for (let i = 1; i < Math.min(results.length, 10); i++) {
-        if (results[i] === results[0]) bet++;
-        else break;
-    }
-    if (bet >= 3) {
-        let conf = Math.min(88, 50 + bet * 4);
-        return { du_doan: results[0], do_tin_cay: conf, loai_cau: `Bệt ${bet} phiên` };
+    // 1. Bệt (4+ ván giống nhau)
+    let last4 = results.slice(-4);
+    if (last4[0] === last4[1] && last4[1] === last4[2] && last4[2] === last4[3]) {
+        let betLen = 4;
+        for (let i = 4; i < results.length; i++) if (results[i] === results[0]) betLen++;
+        let conf = Math.min(88, 55 + betLen * 3);
+        return { type: 'BET', prediction: results[0], action: 'THEO_DUOI', message: `🔴 Cầu Bệt ${betLen} phiên ${results[0]}`, confidence: conf };
     }
     
-    // Đảo 1-1
-    let dao = 1;
-    for (let i = 1; i < Math.min(results.length, 12); i++) {
-        if (results[i] !== results[i-1]) dao++;
-        else break;
-    }
-    if (dao >= 4) {
-        let pred = results[dao-1] === 'Tài' ? 'Xỉu' : 'Tài';
-        let conf = Math.min(84, 55 + dao * 2);
-        return { du_doan: pred, do_tin_cay: conf, loai_cau: `Đảo ${dao} nhịp` };
+    // 2. Đảo 1-1
+    let last5 = results.slice(-5);
+    let is11 = true;
+    for (let i = 1; i < 5; i++) if (last5[i] === last5[i-1]) { is11 = false; break; }
+    if (is11 && last5.length === 5) {
+        let pred = last5[4] === 'Tài' ? 'Xỉu' : 'Tài';
+        return { type: 'DAO_11', prediction: pred, action: 'BE_CAU', message: `🟡 Cầu 1-1 – Bẻ cầu, đặt ${pred}`, confidence: 76 };
     }
     
-    // Xu hướng 3 phiên
-    let last3 = results.slice(0, 3);
+    // 3. Cầu 2-2
+    let last6 = results.slice(-6);
+    if (last6.length >= 6 && last6[0] === last6[1] && last6[2] === last6[3] && last6[4] === last6[5] && last6[0] !== last6[2]) {
+        let pred = last6[2] === 'Tài' ? 'Xỉu' : 'Tài';
+        return { type: 'CAU_22', prediction: pred, action: 'THEO_CAP', message: `🟢 Cầu 2-2 – Theo cặp, đặt ${pred}`, confidence: 80 };
+    }
+    
+    // 4. Cầu 3-2-1
+    if (last6.length === 6 && last6[0] === last6[1] && last6[1] === last6[2] && last6[3] === last6[4] && last6[0] !== last6[3] && last6[5] === last6[0]) {
+        return { type: 'CAU_321', prediction: 'Xỉu', action: 'THEO_NHIP', message: `📊 Cầu 3-2-1 (TTTXXT) – Theo nhịp giảm dần`, confidence: 78 };
+    }
+    if (last6.length === 6 && last6[0] !== 'Tài' && last6[1] !== 'Tài' && last6[2] !== 'Tài' && last6[3] === 'Tài' && last6[4] === 'Tài' && last6[5] !== 'Tài') {
+        return { type: 'CAU_321', prediction: 'Tài', action: 'THEO_NHIP', message: `📊 Cầu 3-2-1 (XXXTTX) – Theo nhịp giảm`, confidence: 78 };
+    }
+    
+    // 5. Cầu 1-2-3
+    if (last6.length === 6 && last6[0] !== last6[1] && last6[1] === last6[2] && last6[2] !== last6[3] && last6[3] === last6[4] && last6[4] === last6[5]) {
+        return { type: 'CAU_123', prediction: 'Xỉu', action: 'THEO_TIEN', message: `📈 Cầu 1-2-3 (TXXTTT) – Vào tiền tăng dần`, confidence: 82 };
+    }
+    if (last6.length === 6 && last6[0] !== 'Tài' && last6[1] === 'Tài' && last6[2] === 'Tài' && last6[3] !== 'Tài' && last6[4] !== 'Tài' && last6[5] !== 'Tài') {
+        return { type: 'CAU_123', prediction: 'Tài', action: 'THEO_TIEN', message: `📈 Cầu 1-2-3 (XTTXXX) – Vào tiền tăng dần`, confidence: 82 };
+    }
+    
+    // 6. Cầu 3-3
+    let last9 = results.slice(-9);
+    if (last9.length >= 9 && last9[0]===last9[1] && last9[1]===last9[2] && last9[3]===last9[4] && last9[4]===last9[5] && last9[6]===last9[7] && last9[7]===last9[8] && last9[0]!==last9[3] && last9[3]!==last9[6]) {
+        let pred = last9[6] === 'Tài' ? 'Xỉu' : 'Tài';
+        return { type: 'CAU_33', prediction: pred, action: 'THAN_TRONG', message: `🟣 Cầu 3-3 (TTTXXXTTT) – Rủi ro cao`, confidence: 74 };
+    }
+    
+    // 7. Cầu 4-2-4
+    let last10 = results.slice(-10);
+    if (last10.length >= 10 && last10[0]===last10[1] && last10[1]===last10[2] && last10[2]===last10[3] && last10[4]===last10[5] && last10[6]===last10[7] && last10[7]===last10[8] && last10[8]===last10[9] && last10[0]!==last10[4] && last10[4]!==last10[6]) {
+        let pred = last10[6] === 'Tài' ? 'Xỉu' : 'Tài';
+        return { type: 'CAU_424', prediction: pred, action: 'THAN_TRONG', message: `📐 Cầu 4-2-4 (TTTTXXTTTT) – Rủi ro cao`, confidence: 72 };
+    }
+    
+    // 8. Cầu 2-1-2
+    if (last6.length === 6 && last6[0] === last6[1] && last6[1] !== last6[2] && last6[2] === last6[3] && last6[3] === last6[4] && last6[4] !== last6[5]) {
+        let pred = last6[0] === 'Tài' ? 'Xỉu' : 'Tài';
+        return { type: 'CAU_212', prediction: pred, action: 'THAN_TRONG', message: `🔁 Cầu 2-1-2 (TTXTTX) – Chu kỳ ngắn`, confidence: 73 };
+    }
+    
+    // 9. Zigzag (rối) – không có cầu rõ ràng
+    let last3 = results.slice(-3);
     let tai3 = last3.filter(r => r === 'Tài').length;
     let pred = tai3 >= 2 ? 'Tài' : 'Xỉu';
-    return { du_doan: pred, do_tin_cay: 62, loai_cau: `Xu hướng ${tai3}T-${3-tai3}X` };
+    return { type: 'ZIGZAG', prediction: pred, action: 'THEO_XU_HUONG', message: `🌀 Cầu rối – Theo xu hướng ${tai3}T-${3-tai3}X`, confidence: 62 };
+}
+
+// ==================== THUẬT TOÁN TÀI XỈU CHÍNH ====================
+function duDoanTaiXiu(history) {
+    let results = history.slice(0, 30).map(h => h.ket_qua_thuc_te).filter(r => r);
+    if (results.length < 2) return { du_doan: 'Tài', do_tin_cay: 55, loai_cau: 'Chưa đủ dữ liệu', chi_tiet: 'Cần ít nhất 2 phiên để phân tích' };
+    
+    let cau = nhanDangCau(results);
+    let du_doan = cau.prediction;
+    let do_tin_cay = cau.confidence;
+    let loai_cau = cau.type;
+    let chi_tiet = cau.message;
+    
+    return { du_doan, do_tin_cay, loai_cau, chi_tiet };
 }
 
 // ==================== FETCH DỮ LIỆU ====================
-async function fetchGame(url, type) {
+async function fetchGame(url, type = 'default') {
     try {
         const res = await axios.get(url, { timeout: 8000 });
-        if (type === 'sunwin_tx' && res.data?.taixiu) {
-            let last = res.data.taixiu[0];
-            return { phien: last.Phien, ket_qua: last.Ket_qua === 'Tài' ? 'Tài' : 'Xỉu', tong: last.Tong };
+        if (type === 'xocdia' && Array.isArray(res.data) && res.data.length > 0) {
+            let last = res.data[0];
+            let ketQua = last.BetSide === 0 ? 'Tài' : 'Xỉu';
+            return { phien: last.SessionId, ket_qua: ketQua, tong: last.DiceSum };
         }
-        if ((type === 'taixiu_single' || type === 'lc79' || type === 'betvip' || type === 'max789') && res.data?.ket_qua) {
-            let ketQua = res.data.ket_qua === 'Tài' || res.data.ket_qua === 'TAI' ? 'Tài' : 'Xỉu';
-            return { phien: res.data.phien, ket_qua: ketQua, tong: res.data.tong };
-        }
-        if (type === 'b52' && res.data?.ket_qua) {
-            let ketQua = res.data.ket_qua === 'tài' ? 'Tài' : 'Xỉu';
-            return { phien: res.data.phien, ket_qua: ketQua, tong: res.data.tong };
-        }
-        if (type === 'sicbo' && res.data?.ket_qua) {
-            let ketQua = res.data.ket_qua === 'Tài' ? 'Tài' : 'Xỉu';
-            return { phien: parseInt(res.data.phien.replace('#', '')), ket_qua: ketQua, tong: res.data.tong, x1: res.data.xuc_xac_1, x2: res.data.xuc_xac_2, x3: res.data.xuc_xac_3 };
-        }
-        if (type === 'bcr' && res.data?.data) {
-            let bans = {};
-            for (let ban of res.data.data) {
-                if (!bans[ban.ban]) bans[ban.ban] = '';
-                if (ban.results) bans[ban.ban] += ban.results;
-            }
-            return { bans };
+        if (res.data && res.data.ket_qua) {
+            let ketQua = (res.data.ket_qua === 'Tài' || res.data.ket_qua === 'TAI' || res.data.ket_qua === 'tài') ? 'Tài' : 'Xỉu';
+            let phien = res.data.phien;
+            if (typeof phien === 'string' && phien.includes('#')) phien = parseInt(phien.replace('#', ''));
+            return { phien, ket_qua, tong: res.data.tong || 0 };
         }
         return null;
-    } catch(e) { return null; }
+    } catch(e) { console.log(`Fetch error ${url}:`, e.message); return null; }
 }
 
-// ==================== SUNWIN TÀI XỈU ====================
-app.get('/sunwin/tx', async (req, res) => {
-    try {
-        const data = await fetchGame(API_SUNWIN_TX, 'sunwin_tx');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.sunwin_tx);
-        predictionsDB.sunwin_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'Sunwin Tài Xỉu', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
+// ==================== TẠO API ĐỘNG CHO TẤT CẢ GAME ====================
+const GAMES = [
+    { route: '/sunwin/tx', name: 'Sunwin Tài Xỉu', url: API_SUNWIN_TX, key: 'sunwin_tx' },
+    { route: '/hitclub', name: 'Hitclub', url: API_HITCLUB, key: 'hitclub' },
+    { route: '/lc79/tx', name: 'LC79 Hũ', url: API_LC79_TX, key: 'lc79_tx' },
+    { route: '/lc79/md5', name: 'LC79 MD5', url: API_LC79_MD5, key: 'lc79_md5' },
+    { route: '/betvip/tx', name: 'Betvip Hũ', url: API_BETVIP_TX, key: 'betvip_tx' },
+    { route: '/betvip/md5', name: 'Betvip MD5', url: API_BETVIP_MD5, key: 'betvip_md5' },
+    { route: '/max789', name: 'Max789', url: API_MAX789, key: 'max789' },
+    { route: '/b52', name: 'B52 MD5', url: API_B52, key: 'b52' },
+    { route: '/xocdia88/tx', name: 'XocDia88 Tài Xỉu', url: API_XOCDIA88_TX, key: 'xocdia88_tx', type: 'xocdia' },
+    { route: '/xocdia88/md5', name: 'XocDia88 MD5', url: API_XOCDIA88_MD5, key: 'xocdia88_md5', type: 'xocdia' }
+];
 
-// ==================== SUNWIN SICBO (Tài Xỉu + Vị) ====================
-app.get('/sunwin/sicbo', async (req, res) => {
-    try {
-        const data = await fetchGame(API_SUNWIN_SICBO, 'sicbo');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        
-        // Phân tích vị dựa trên tổng điểm
-        let tong = data.tong;
-        let duDoan = tong >= 11 ? 'Tài' : 'Xỉu';
-        let doTinCay = 75;
-        let viGiai = [];
-        
-        if (tong >= 11) {
-            if (tong === 11) viGiai.push('3-4-4, 2-4-5');
-            else if (tong === 12) viGiai.push('3-4-5, 2-5-5, 4-4-4');
-            else if (tong === 13) viGiai.push('4-4-5, 3-5-5, 3-4-6');
-            else if (tong === 14) viGiai.push('4-5-5, 4-4-6, 2-6-6');
-            else if (tong === 15) viGiai.push('5-5-5, 3-6-6, 4-5-6');
-            else if (tong === 16) viGiai.push('5-5-6, 4-6-6');
-            else if (tong === 17) viGiai.push('5-6-6');
-            else if (tong === 18) viGiai.push('6-6-6');
-        } else {
-            if (tong === 4) viGiai.push('1-1-2');
-            else if (tong === 5) viGiai.push('1-1-3, 1-2-2');
-            else if (tong === 6) viGiai.push('1-1-4, 1-2-3, 2-2-2');
-            else if (tong === 7) viGiai.push('1-1-5, 1-2-4, 1-3-3, 2-2-3');
-            else if (tong === 8) viGiai.push('1-1-6, 1-2-5, 1-3-4, 2-2-4, 2-3-3');
-            else if (tong === 9) viGiai.push('1-2-6, 1-3-5, 1-4-4, 2-2-5, 2-3-4, 3-3-3');
-            else if (tong === 10) viGiai.push('1-3-6, 1-4-5, 2-2-6, 2-3-5, 2-4-4, 3-3-4');
+for (let game of GAMES) {
+    app.get(game.route, async (req, res) => {
+        try {
+            const data = await fetchGame(game.url, game.type || 'default');
+            if (!data) return res.status(503).json({ error: `Cannot fetch ${game.name} data` });
+            
+            let pred = duDoanTaiXiu(predictionsDB[game.key]);
+            predictionsDB[game.key].unshift({ 
+                phien_du_doan: data.phien + 1, 
+                ket_qua_thuc_te: data.ket_qua, 
+                du_doan: pred.du_doan,
+                timestamp: new Date().toISOString()
+            });
+            if (predictionsDB[game.key].length > 50) predictionsDB[game.key] = predictionsDB[game.key].slice(0, 50);
+            
+            res.json({
+                game: game.name,
+                phien_hien_tai: data.phien + 1,
+                du_doan: pred.du_doan,
+                do_tin_cay: pred.do_tin_cay + '%',
+                loai_cau: pred.loai_cau,
+                chi_tiet_cau: pred.chi_tiet,
+                ket_qua_truoc: data.ket_qua,
+                tong_truoc: data.tong,
+                id: '@tranhoang2286'
+            });
+        } catch(e) {
+            res.status(500).json({ error: e.message });
         }
-        
-        res.json({
-            game: 'Sunwin Sicbo',
-            phien_hien_tai: data.phien + 1,
-            du_doan: duDoan,
-            do_tin_cay: doTinCay + '%',
-            tong_diem: tong,
-            vi_du_doan: viGiai.join(', '),
-            ket_qua_truoc: data.ket_qua,
-            id: '@tranhoang2286'
-        });
-    } catch(e) {
-        res.json({ game: 'Sunwin Sicbo', du_doan: 'Tài', do_tin_cay: '65%', vi_du_doan: '11,12,13,14', id: '@tranhoang2286' });
-    }
-});
+    });
+}
 
-// ==================== HITCLUB ====================
-app.get('/hitclub', async (req, res) => {
-    try {
-        const data = await fetchGame(API_HITCLUB, 'taixiu_single');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.hitclub);
-        predictionsDB.hitclub.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'Hitclub', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== LC79 HŨ ====================
-app.get('/lc79/tx', async (req, res) => {
-    try {
-        const data = await fetchGame(API_LC79_TX, 'lc79');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.lc79_tx);
-        predictionsDB.lc79_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'LC79 Hũ', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== LC79 MD5 ====================
-app.get('/lc79/md5', async (req, res) => {
-    try {
-        const data = await fetchGame(API_LC79_MD5, 'lc79');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.lc79_md5);
-        predictionsDB.lc79_md5.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'LC79 MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== BETVIP HŨ ====================
-app.get('/betvip/tx', async (req, res) => {
-    try {
-        const data = await fetchGame(API_BETVIP_TX, 'betvip');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.betvip_tx);
-        predictionsDB.betvip_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'Betvip Hũ', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== BETVIP MD5 ====================
-app.get('/betvip/md5', async (req, res) => {
-    try {
-        const data = await fetchGame(API_BETVIP_MD5, 'betvip');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.betvip_md5);
-        predictionsDB.betvip_md5.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'Betvip MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== MAX789 ====================
-app.get('/max789', async (req, res) => {
-    try {
-        const data = await fetchGame(API_MAX789, 'max789');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.max789);
-        predictionsDB.max789.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'Max789', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== B52 MD5 ====================
-app.get('/b52', async (req, res) => {
-    try {
-        const data = await fetchGame(API_B52, 'b52');
-        if (!data) return res.status(503).json({ error: 'Cannot fetch data' });
-        let pred = duDoanTaiXiu(predictionsDB.b52);
-        predictionsDB.b52.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
-        res.json({ game: 'B52 MD5', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, id: '@tranhoang2286' });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// ==================== BCR - DANH SÁCH BÀN ====================
+// ==================== BCR ====================
 app.get('/bcr/bans', async (req, res) => {
     try {
-        const data = await fetchGame(API_BCR, 'bcr');
-        if (!data?.bans) return res.status(503).json({ error: 'Cannot fetch BCR data' });
-        let banList = Object.keys(data.bans).sort();
-        res.json({ success: true, total_bans: banList.length, bans: banList, id: '@tranhoang2286' });
+        const response = await axios.get(API_BCR, { timeout: 10000 });
+        if (!response.data?.data) return res.status(503).json({ error: 'Cannot fetch BCR data' });
+        let banList = [...new Set(response.data.data.map(b => b.ban))].sort();
+        res.json({ success: true, bans: banList, total: banList.length, id: '@tranhoang2286' });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== BCR - DỰ ĐOÁN 1 BÀN ====================
 app.get('/bcr/ban/:banId', async (req, res) => {
     try {
         const banId = req.params.banId;
-        const data = await fetchGame(API_BCR, 'bcr');
-        if (!data?.bans || !data.bans[banId]) return res.status(404).json({ error: `Ban ${banId} not found` });
+        const response = await axios.get(API_BCR, { timeout: 10000 });
+        if (!response.data?.data) return res.status(503).json({ error: 'Cannot fetch BCR data' });
         
-        let resultsStr = data.bans[banId];
-        let lastResult = resultsStr.length > 0 ? resultsStr[resultsStr.length - 1] : '?';
-        let bCount = (resultsStr.match(/B/g) || []).length;
-        let pCount = (resultsStr.match(/P/g) || []).length;
-        let tCount = (resultsStr.match(/T/g) || []).length;
+        let allResults = '';
+        for (let ban of response.data.data) {
+            if (ban.ban === banId && ban.results) allResults += ban.results;
+        }
+        if (!allResults) return res.status(404).json({ error: `Ban ${banId} not found` });
         
-        // Dự đoán Con/Cái
+        let lastResult = allResults[allResults.length - 1];
+        let bCount = (allResults.match(/B/g) || []).length;
+        let pCount = (allResults.match(/P/g) || []).length;
+        let tCount = (allResults.match(/T/g) || []).length;
+        
+        // Phân tích cầu cho BCR
         let duDoanConCai = 'Con', doTinCayConCai = 60, lyDoConCai = 'Theo xu hướng';
-        if (resultsStr.length >= 3) {
+        if (allResults.length >= 3) {
             let bet = 1;
-            for (let i = resultsStr.length - 2; i >= 0; i--) {
-                if (resultsStr[i] === lastResult) bet++;
+            for (let i = allResults.length - 2; i >= 0; i--) {
+                if (allResults[i] === lastResult) bet++;
                 else break;
             }
             if (bet >= 3) {
@@ -264,8 +219,8 @@ app.get('/bcr/ban/:banId', async (req, res) => {
                 lyDoConCai = `Bệt ${bet} ván ${duDoanConCai}`;
             } else {
                 let dao = 1;
-                for (let i = resultsStr.length - 2; i >= 0; i--) {
-                    if (resultsStr[i] !== resultsStr[i+1]) dao++;
+                for (let i = allResults.length - 2; i >= 0; i--) {
+                    if (allResults[i] !== allResults[i+1]) dao++;
                     else break;
                 }
                 if (dao >= 4) {
@@ -276,56 +231,54 @@ app.get('/bcr/ban/:banId', async (req, res) => {
             }
         }
         
-        // Dự đoán Hòa
-        let duDoanHoa = 'Không', doTinCayHoa = 85, lyDoHoa = 'Hòa hiếm';
-        if (tCount >= 2 && resultsStr.slice(-5).includes('T')) {
+        let duDoanHoa = 'Không', doTinCayHoa = 85;
+        if (tCount >= 2 && allResults.slice(-5).includes('T')) {
             duDoanHoa = 'Có';
             doTinCayHoa = 65;
-            lyDoHoa = `Hòa xuất hiện ${tCount} lần`;
         }
         
-        // Dự đoán Con Đôi (BB)
-        let duDoanConDoi = 'Không', doTinCayConDoi = 85, lyDoConDoi = 'Con đôi hiếm';
-        if (resultsStr.slice(-2) === 'BB') {
-            duDoanConDoi = 'Có';
-            doTinCayConDoi = 70;
-            lyDoConDoi = 'Ván trước có BB';
-        }
+        let duDoanConDoi = 'Không', doTinCayConDoi = 85;
+        if (allResults.slice(-2) === 'BB') { duDoanConDoi = 'Có'; doTinCayConDoi = 70; }
         
-        // Dự đoán Cái Đôi (PP)
-        let duDoanCaiDoi = 'Không', doTinCayCaiDoi = 85, lyDoCaiDoi = 'Cái đôi hiếm';
-        if (resultsStr.slice(-2) === 'PP') {
-            duDoanCaiDoi = 'Có';
-            doTinCayCaiDoi = 70;
-            lyDoCaiDoi = 'Ván trước có PP';
-        }
+        let duDoanCaiDoi = 'Không', doTinCayCaiDoi = 85;
+        if (allResults.slice(-2) === 'PP') { duDoanCaiDoi = 'Có'; doTinCayCaiDoi = 70; }
         
         res.json({
-            game: 'BCR Sexy', ban: banId,
-            du_doan_con_cai: duDoanConCai, do_tin_cay_con_cai: doTinCayConCai + '%', ly_do_con_cai: lyDoConCai,
-            du_doan_hoa: duDoanHoa, do_tin_cay_hoa: doTinCayHoa + '%', ly_do_hoa: lyDoHoa,
-            du_doan_con_doi: duDoanConDoi, do_tin_cay_con_doi: doTinCayConDoi + '%', ly_do_con_doi: lyDoConDoi,
-            du_doan_cai_doi: duDoanCaiDoi, do_tin_cay_cai_doi: doTinCayCaiDoi + '%', ly_do_cai_doi: lyDoCaiDoi,
-            thong_ke: { tong_van: resultsStr.length, con: bCount, cai: pCount, hoa: tCount },
+            game: 'BCR Sexy',
+            ban: banId,
+            du_doan_con_cai: duDoanConCai,
+            do_tin_cay_con_cai: doTinCayConCai + '%',
+            ly_do_con_cai: lyDoConCai,
+            du_doan_hoa: duDoanHoa,
+            do_tin_cay_hoa: doTinCayHoa + '%',
+            du_doan_con_doi: duDoanConDoi,
+            do_tin_cay_con_doi: doTinCayConDoi + '%',
+            du_doan_cai_doi: duDoanCaiDoi,
+            do_tin_cay_cai_doi: doTinCayCaiDoi + '%',
+            thong_ke: { tong_van: allResults.length, con: bCount, cai: pCount, hoa: tCount, ty_le_con: ((bCount/allResults.length)*100).toFixed(1)+'%', ty_le_cai: ((pCount/allResults.length)*100).toFixed(1)+'%' },
             id: '@tranhoang2286'
         });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== BCR - TẤT CẢ BÀN ====================
 app.get('/bcr/all', async (req, res) => {
     try {
-        const data = await fetchGame(API_BCR, 'bcr');
-        if (!data?.bans) return res.status(503).json({ error: 'Cannot fetch BCR data' });
+        const response = await axios.get(API_BCR, { timeout: 10000 });
+        if (!response.data?.data) return res.status(503).json({ error: 'Cannot fetch BCR data' });
+        let banMap = {};
+        for (let ban of response.data.data) {
+            if (!banMap[ban.ban]) banMap[ban.ban] = '';
+            if (ban.results) banMap[ban.ban] += ban.results;
+        }
         let all = {};
-        for (let [banId, resultsStr] of Object.entries(data.bans)) {
-            let lastResult = resultsStr.length > 0 ? resultsStr[resultsStr.length - 1] : '?';
+        for (let [banId, resultsStr] of Object.entries(banMap)) {
+            let last = resultsStr[resultsStr.length - 1];
             let bet = 1;
             for (let i = resultsStr.length - 2; i >= 0; i--) {
-                if (resultsStr[i] === lastResult) bet++;
+                if (resultsStr[i] === last) bet++;
                 else break;
             }
-            let duDoan = (bet >= 3 && lastResult === 'B') ? 'Con' : ((bet >= 3 && lastResult === 'P') ? 'Cái' : (lastResult === 'B' ? 'Cái' : 'Con'));
+            let duDoan = (bet >= 3) ? (last === 'B' ? 'Con' : 'Cái') : (last === 'B' ? 'Cái' : 'Con');
             let doTinCay = bet >= 3 ? Math.min(85, 55 + bet * 4) : 62;
             all[banId] = { du_doan: duDoan, do_tin_cay: doTinCay + '%' };
         }
@@ -333,33 +286,51 @@ app.get('/bcr/all', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ==================== LỊCH SỬ (Cho Sunwin Tài Xỉu) ====================
-app.get('/sunwin/lichsu', (req, res) => {
-    res.json({ game: 'Sunwin Tài Xỉu', lich_su: predictionsDB.sunwin_tx.slice(0, 20), id: '@tranhoang2286' });
+// ==================== LỊCH SỬ & RESET ====================
+app.get('/lichsu/:game', (req, res) => {
+    const gameKey = req.params.game;
+    if (!predictionsDB[gameKey]) return res.status(404).json({ error: 'Game not found' });
+    res.json({ game: gameKey, lich_su: predictionsDB[gameKey].slice(0, 30), id: '@tranhoang2286' });
 });
 
-// ==================== RESET ====================
-app.post('/reset', (req, res) => {
-    for (let k of Object.keys(predictionsDB)) predictionsDB[k] = [];
-    res.json({ success: true, message: 'Reset all history', id: '@tranhoang2286' });
+app.post('/reset/:game', (req, res) => {
+    const gameKey = req.params.game;
+    if (predictionsDB[gameKey]) predictionsDB[gameKey] = [];
+    res.json({ success: true, message: `Reset ${gameKey} history`, id: '@tranhoang2286' });
 });
 
-// ==================== ROOT ====================
 app.get('/', (req, res) => {
     res.json({
-        name: 'TỔNG HỢP API TÀI XỈU - BCR - SICBO',
+        name: 'TỔNG HỢP API TÀI XỈU + BCR + XOCDIA88',
         author: '@tranhoang2286',
+        version: 'ULTIMATE',
+        so_luong_game: GAMES.length + 1,
+        danh_sach_game: [...GAMES.map(g => g.route), '/bcr/bans', '/bcr/ban/:banId', '/bcr/all'],
+        loai_cau_ho_tro: ['Bệt', 'Đảo 1-1', '2-2', '3-2-1', '1-2-3', '3-3', '4-2-4', '2-1-2', 'Zigzag'],
         endpoints: {
-            'Sunwin Tài Xỉu': '/sunwin/tx', 'Sunwin Sicbo': '/sunwin/sicbo', 'Hitclub': '/hitclub',
-            'LC79 Hũ': '/lc79/tx', 'LC79 MD5': '/lc79/md5', 'Betvip Hũ': '/betvip/tx', 'Betvip MD5': '/betvip/md5',
-            'Max789': '/max789', 'B52 MD5': '/b52', 'BCR Danh sách bàn': '/bcr/bans',
-            'BCR 1 bàn': '/bcr/ban/:banId', 'BCR Tất cả': '/bcr/all', 'Lịch sử Sunwin': '/sunwin/lichsu'
+            'Sunwin Tài Xỉu': '/sunwin/tx',
+            'Hitclub': '/hitclub',
+            'LC79 Hũ': '/lc79/tx',
+            'LC79 MD5': '/lc79/md5',
+            'Betvip Hũ': '/betvip/tx',
+            'Betvip MD5': '/betvip/md5',
+            'Max789': '/max789',
+            'B52 MD5': '/b52',
+            'XocDia88 Tài Xỉu': '/xocdia88/tx',
+            'XocDia88 MD5': '/xocdia88/md5',
+            'BCR danh sách bàn': '/bcr/bans',
+            'BCR 1 bàn': '/bcr/ban/:banId',
+            'BCR tất cả': '/bcr/all',
+            'Lịch sử theo game': '/lichsu/:game',
+            'Reset game': '/reset/:game (POST)'
         }
     });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 SERVER TỔNG HỢP - ${Object.keys(predictionsDB).length} GAME`);
+    console.log(`\n🚀 SERVER TỔNG HỢP - ${GAMES.length + 1} GAME | 9 DẠNG CẦU`);
     console.log(`📡 PORT: ${PORT}`);
-    console.log(`✅ Sunwin | Hitclub | LC79 | Betvip | Max789 | B52 | BCR | Sicbo`);
+    console.log(`✅ Sunwin | Hitclub | LC79 | Betvip | Max789 | B52 | XocDia88 | BCR`);
+    for (let game of GAMES) console.log(`   📌 ${game.route}`);
+    console.log(`   📌 /bcr/bans - /bcr/ban/1 - /bcr/all`);
 });
