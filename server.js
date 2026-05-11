@@ -16,11 +16,13 @@ const API_BETVIP_TX = 'https://wtx.macminim6.online/v1/tx/sessions';
 const API_MAX789 = 'https://cage-adjustment-whose-banner.trycloudflare.com/api/tx';
 const API_XOCDIA = 'https://chance-compete-chambers-feelings.trycloudflare.com/api/xocdia';
 const API_BCR = 'https://classic-watching-cup-representatives.trycloudflare.com/api/bcr';
+const API_SUNWIN_TX = 'https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx';  // THÊM SUNWIN
 
 // Cache lịch sử
 let predictionsDB = {
     lc79_tx: [], lc79_md5: [], hitclub: [],
-    betvip_tx: [], betvip_md5: [], max789: []
+    betvip_tx: [], betvip_md5: [], max789: [],
+    sunwin_tx: []  // THÊM SUNWIN
 };
 
 // ==================== LC79 DEEP ANALYTICS ENGINE - 30 THUẬT TOÁN ====================
@@ -439,46 +441,17 @@ async function fetchTele68(url, isMd5 = false) {
     } catch(e) { return null; }
 }
 
-// ==================== API LC79 MD5 DÙNG DEEP ENGINE ====================
-app.get('/lc79/md5', async (req, res) => {
+async function fetchSunwin() {
     try {
-        const data = await fetchTele68(API_LC79_MD5, true);
-        if (!data) return res.status(503).json({ error: 'Cannot fetch LC79 MD5 data' });
-        
-        // Lấy lịch sử kết quả thực tế (đã lưu)
-        let results = predictionsDB.lc79_md5.slice(0, 50).map(h => h.ket_qua_thuc_te === 'Tài' ? 'TAI' : 'XIU').filter(r => r);
-        results.unshift(data.ket_qua === 'Tài' ? 'TAI' : 'XIU');
-        
-        // Cập nhật engine học
-        lc79Engine.learn(data.ket_qua === 'Tài' ? 'TAI' : 'XIU', results, { tong: data.tong, faces: data.dices });
-        
-        // Dự đoán bằng deep engine
-        const prediction = lc79Engine.predict(results);
-        
-        // Lưu lịch sử
-        predictionsDB.lc79_md5.unshift({ 
-            phien_du_doan: data.phien + 1, 
-            ket_qua_thuc_te: data.ket_qua, 
-            du_doan: prediction.du_doan,
-            timestamp: new Date().toISOString()
-        });
-        if (predictionsDB.lc79_md5.length > 100) predictionsDB.lc79_md5 = predictionsDB.lc79_md5.slice(0, 100);
-        
-        res.json({
-            game: 'LC79 MD5 (Deep 30 Algorithms)',
-            phien_hien_tai: data.phien + 1,
-            du_doan: prediction.du_doan,
-            do_tin_cay: prediction.do_tin_cay + '%',
-            ket_qua_truoc: data.ket_qua,
-            tong_truoc: data.tong,
-            dice_truoc: data.dices,
-            so_thuat_toan_da_dung: 30,
-            id: '@tranhoang2286'
-        });
-    } catch(e) { res.status(500).json({ error: e.message }); }
-});
+        const res = await axios.get(API_SUNWIN_TX, { timeout: 8000 });
+        if (res.data && res.data.ket_qua) {
+            let ketQua = res.data.ket_qua === 'Tài' || res.data.ket_qua === 'TAI' ? 'Tài' : 'Xỉu';
+            return { phien: res.data.phien, ket_qua: ketQua, tong: res.data.tong };
+        }
+        return null;
+    } catch(e) { return null; }
+}
 
-// ==================== API KHÁC (GIỮ NGUYÊN) ====================
 async function fetchHitclub() {
     try {
         const res = await axios.get(API_HITCLUB, { timeout: 8000 });
@@ -522,7 +495,53 @@ function duDoanTaiXiu(history) {
     return { du_doan: pred, do_tin_cay: 62, loai_cau: `Xu hướng ${tai3}T-${3-tai3}X` };
 }
 
-// API LC79 TX (dùng thuật toán thường)
+// ==================== API SUNWIN ====================
+app.get('/sunwin/tx', async (req, res) => {
+    try {
+        const data = await fetchSunwin();
+        if (!data) return res.status(503).json({ error: 'Cannot fetch Sunwin data' });
+        let pred = duDoanTaiXiu(predictionsDB.sunwin_tx);
+        predictionsDB.sunwin_tx.unshift({ phien_du_doan: data.phien + 1, ket_qua_thuc_te: data.ket_qua, du_doan: pred.du_doan });
+        res.json({ game: 'Sunwin Tài Xỉu', phien_hien_tai: data.phien + 1, du_doan: pred.du_doan, do_tin_cay: pred.do_tin_cay + '%', loai_cau: pred.loai_cau, ket_qua_truoc: data.ket_qua, tong_truoc: data.tong, id: '@tranhoang2286' });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== API LC79 MD5 DÙNG DEEP ENGINE ====================
+app.get('/lc79/md5', async (req, res) => {
+    try {
+        const data = await fetchTele68(API_LC79_MD5, true);
+        if (!data) return res.status(503).json({ error: 'Cannot fetch LC79 MD5 data' });
+        
+        let results = predictionsDB.lc79_md5.slice(0, 50).map(h => h.ket_qua_thuc_te === 'Tài' ? 'TAI' : 'XIU').filter(r => r);
+        results.unshift(data.ket_qua === 'Tài' ? 'TAI' : 'XIU');
+        
+        lc79Engine.learn(data.ket_qua === 'Tài' ? 'TAI' : 'XIU', results, { tong: data.tong, faces: data.dices });
+        
+        const prediction = lc79Engine.predict(results);
+        
+        predictionsDB.lc79_md5.unshift({ 
+            phien_du_doan: data.phien + 1, 
+            ket_qua_thuc_te: data.ket_qua, 
+            du_doan: prediction.du_doan,
+            timestamp: new Date().toISOString()
+        });
+        if (predictionsDB.lc79_md5.length > 100) predictionsDB.lc79_md5 = predictionsDB.lc79_md5.slice(0, 100);
+        
+        res.json({
+            game: 'LC79 MD5 (Deep 30 Algorithms)',
+            phien_hien_tai: data.phien + 1,
+            du_doan: prediction.du_doan,
+            do_tin_cay: prediction.do_tin_cay + '%',
+            ket_qua_truoc: data.ket_qua,
+            tong_truoc: data.tong,
+            dice_truoc: data.dices,
+            so_thuat_toan_da_dung: 30,
+            id: '@tranhoang2286'
+        });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ==================== API LC79 TX ====================
 app.get('/lc79/tx', async (req, res) => {
     try {
         const data = await fetchTele68(API_LC79_TX);
@@ -533,7 +552,7 @@ app.get('/lc79/tx', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Hitclub
+// ==================== API HITCLUB ====================
 app.get('/hitclub', async (req, res) => {
     try {
         const data = await fetchHitclub();
@@ -544,7 +563,7 @@ app.get('/hitclub', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Betvip TX
+// ==================== API BETVIP TX ====================
 app.get('/betvip/tx', async (req, res) => {
     try {
         const data = await fetchTele68(API_BETVIP_TX);
@@ -555,7 +574,7 @@ app.get('/betvip/tx', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Betvip MD5
+// ==================== API BETVIP MD5 ====================
 app.get('/betvip/md5', async (req, res) => {
     try {
         const data = await fetchTele68(API_BETVIP_MD5);
@@ -566,7 +585,7 @@ app.get('/betvip/md5', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Max789
+// ==================== API MAX789 ====================
 app.get('/max789', async (req, res) => {
     try {
         const data = await fetchMax789();
@@ -577,7 +596,7 @@ app.get('/max789', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Xóc Đĩa
+// ==================== API XÓC ĐĨA ====================
 app.get('/xocdia', async (req, res) => {
     try {
         const data = await fetchXocDia();
@@ -676,10 +695,11 @@ app.get('/bcr/all', async (req, res) => {
 // ==================== ROOT ====================
 app.get('/', (req, res) => {
     res.json({
-        name: 'TỔNG HỢP API (LC79 DEEP 30 ALGOS + HITCLUB + BETVIP + MAX789 + XÓC ĐĨA + BCR)',
+        name: 'TỔNG HỢP API (SUNWIN + LC79 DEEP 30 ALGOS + HITCLUB + BETVIP + MAX789 + XÓC ĐĨA + BCR)',
         author: '@tranhoang2286',
         ghi_chu: 'LC79 MD5 sử dụng 30 thuật toán deep learning riêng biệt',
         endpoints: {
+            'Sunwin Tài Xỉu': '/sunwin/tx',
             'LC79 Tài Xỉu': '/lc79/tx',
             'LC79 MD5 (30 thuật toán)': '/lc79/md5',
             'Hitclub': '/hitclub',
@@ -695,8 +715,7 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 SERVER TỔNG HỢP - LC79 DEEP ENGINE 30 ALGORITHMS`);
+    console.log(`\n🚀 SERVER TỔNG HỢP - ${Object.keys(predictionsDB).length} GAME`);
     console.log(`📡 PORT: ${PORT}`);
-    console.log(`🎲 LC79 MD5: 30 thuật toán độc quyền (Bayes 1-5, bệt dài, chu kỳ, entropy, gap, stddev, ensemble...)`);
-    console.log(`✅ LC79 TX | Hitclub | Betvip | Max789 | Xóc Đĩa | BCR`);
+    console.log(`✅ Sunwin | LC79 TX | LC79 MD5 (30 thuật toán) | Hitclub | Betvip | Max789 | Xóc Đĩa | BCR`);
 });
