@@ -1,7 +1,11 @@
 {
-  "name": "api-tong-hop",
-  "version": "4.0.0",
-  "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "dependencies": { "express": "^4.18.2", "axios": "^1.6.0", "cors": "^2.8.5" }
+    "name": "api-tong-hop",
+    "version": "4.0.0",
+    "main": "server.js",
+    "scripts": { "start": "node server.js" },
+    "dependencies": { 
+        "express": "^4.18.0",
+        "axios": "^1.6.0",
+        "cors": "^2.8.5"
+    }
 }
